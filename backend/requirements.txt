@@ -1,0 +1,3 @@
+# Runtime dependencies, pinned to what the project is verified against.
+# fastapi[standard] pulls uvicorn, starlette and pydantic.
+fastapi[standard]==0.141.1
