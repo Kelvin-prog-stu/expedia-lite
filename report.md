@@ -4,7 +4,7 @@
 
 Repository: https://github.com/Kelvin-prog-stu/expedia-lite
 
-Commit submitted for Part 1: `c1cbd56b3fd90a7fdddb553eabe1a4855aa5d84f`
+Commit submitted for Part 1: `6f4b9f03727a96ceff711d7d92a4c0a5381d1df0`
 
 ## Implementation
 
