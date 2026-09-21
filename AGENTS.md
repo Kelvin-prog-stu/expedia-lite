@@ -20,10 +20,16 @@ Rules for anyone, human or agent, working in this repo.
 
 ## Backend
 
+The booking features follow Model-View-Controller:
+
+- `models.py` is the Model: table definitions and their foreign-key
+  relationships. Schema changes go here.
+- `database_controller.py` is the Controller: every create, read, update, and
+  delete. No other module runs SQL, and this one imports nothing from FastAPI.
+- `main.py` routes are thin: validate through `schemas.py`, make one controller
+  call, return the result.
 - Type-hint every function signature.
-- Validate responses with the Pydantic models in `schemas.py`.
-- Keep route handlers thin. File reading and record joining belong in
-  `data_source.py`, which imports nothing from FastAPI.
+- Use parameterized queries. Never build SQL from user input.
 - Return structured errors, not raw exception text.
 
 ## Frontend
@@ -37,12 +43,22 @@ Rules for anyone, human or agent, working in this repo.
 
 - The CSV files in `backend/data/` are the instructor's supplied records. Do not
   edit them by hand.
-- Preserve the supplied IDs. New records get new unique IDs.
+- `seed.py` loads them into SQLite once, on the first start. After that every
+  read and write uses SQLite. Never reseed over existing data.
+- Preserve the supplied IDs. New bookings get the next unused ID, and an ID is
+  never reused after a deletion.
+- Cancelling keeps the record and changes its status. Only Delete removes it.
+- `backend/expedia_lite.db` is not committed. Deleting it resets the app to the
+  supplied data on the next start.
 
 ## Verification
 
 - Manually scan every change in VS Code before committing.
-- Check both a search that matches and a search that does not, in the browser.
+- Check a search that matches and one that does not, in the browser.
+- Run each CRUD action through the frontend, including a booking created after
+  seeding.
+- Confirm additions, updates, and deletions survive a browser refresh and a
+  restart of both servers, and that record counts do not grow on restart.
 - Record the action, the expected result, and the observed result.
 
 ## Style
@@ -55,8 +71,9 @@ Rules for anyone, human or agent, working in this repo.
 
 - Format: `<type>: <description>` with types feat, fix, refactor, docs, test, chore.
 - One logical change per commit.
-- `main` is the default branch. Part 2 develops on a feature branch and merges
-  into `main`, preserving the Part 1 checkpoint commit.
+- `main` is the default branch. Substantial work happens on a feature branch
+  and merges into `main` once reviewed and checked. The Part 1 checkpoint commit
+  stays in history.
 
 ## Working loop
 

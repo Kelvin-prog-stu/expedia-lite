@@ -1,18 +1,22 @@
 # Expedia Lite
 
-A small local travel application. You search for a hotel by name and see the
-stays offered at each matching hotel. A Vue frontend sends the search to a
-FastAPI backend, which reads the supplied CSV files and returns the matches.
+A small local travel application. You search hotels by name, book one of the
+stays offered at a hotel, and keep a booking history where each booking can be
+cancelled or deleted. A Vue frontend talks to a FastAPI backend, which stores
+everything in SQLite.
 
 ## Layout
 
 ```
-backend/    FastAPI service and the CSV reader
+backend/    FastAPI service, SQLite model and controller, supplied CSV data
 frontend/   Vue 3 + Vite single-page app
-docs/       design note
+docs/       design note, UI research, and verification screenshots
 prompts/    the prompts that shaped this project
 handoffs/   session handoff notes
 ```
+
+`docs/design-note.md` explains the Model-View-Controller split and has a
+request-flow diagram if you want the shape of the thing before reading code.
 
 ## Requirements
 
@@ -21,8 +25,7 @@ handoffs/   session handoff notes
 
 ## Data
 
-The application reads the instructor's sample data pack. Extract the ZIP and put
-the CSV files in `backend/data/`:
+The instructor's sample data pack lives in `backend/data/`:
 
 ```
 backend/data/hotels.csv
@@ -31,9 +34,14 @@ backend/data/users.csv
 backend/data/bookings.csv
 ```
 
-Part 1 reads `hotels.csv` and `trips.csv`. The other two are seeded in Part 2.
-If a file is missing, the API returns a readable message instead of a stack
-trace.
+On the first start the backend creates `backend/expedia_lite.db` and seeds it
+from those four files, keeping their IDs. Every later start leaves the database
+alone, so your bookings survive restarts and the starter records are never
+duplicated. After seeding, the app reads and writes SQLite only.
+
+To reset to the supplied data, stop the backend and delete
+`backend/expedia_lite.db`. The next start seeds it again. The database file is
+not committed.
 
 ## Backend setup
 
@@ -46,7 +54,8 @@ uvicorn main:app --reload
 ```
 
 The API runs on http://localhost:8000, with interactive docs at
-http://localhost:8000/docs.
+http://localhost:8000/docs. SQLite comes with Python, so there is nothing extra
+to install.
 
 ## Frontend setup
 
@@ -57,24 +66,34 @@ npm run dev
 ```
 
 The app runs on http://localhost:5173. Vite proxies `/api` to port 8000, so the
-backend needs to be running too. Because the proxy makes every call
-same-origin, the frontend never hardcodes the backend's address.
-
-## Endpoints
-
-| Method | Path              | Purpose                                    |
-| ------ | ----------------- | ------------------------------------------ |
-| GET    | `/api/health`     | Liveness check, returns the app version    |
-| GET    | `/api/hotels`     | Search hotels by name, with their stays     |
-
-`GET /api/hotels?name=harbor` matches hotel names case-insensitively and returns
-each hotel with its offered stays attached. An empty `name` returns every hotel.
-`count` is 0 when nothing matched, which is what the interface uses to show its
-no-results message.
+backend needs to be running too.
 
 ## Using it
 
-Type part of a hotel name and press Search. Matching hotels appear in a table,
-one row per offered stay, with the hotel, city, state, nightly rate, stay name,
-and check-in and check-out dates. If nothing matches, the page says so instead of
-showing an empty table.
+1. Pick who you are booking as from **Booking as**. The six demo travelers come
+   from `users.csv`.
+2. Type part of a hotel name and press **Search**. Each offered stay appears as a
+   row with its dates and nightly rate.
+3. Press **Book** on a stay. The booking appears in **Booking history** with the
+   next free ID, starting at `B007`.
+4. **Cancel** marks a booking cancelled and keeps it in history.
+   **Delete** removes it, after a second click to confirm.
+
+The date picker shows two months side by side. Dates are for planning only: every
+stay has fixed dates, so they do not filter the results. Flights, Cars, and the
+other categories open Expedia in a new tab.
+
+## Endpoints
+
+| Method | Path                     | Purpose                                        |
+| ------ | ------------------------ | ---------------------------------------------- |
+| GET    | `/api/health`            | Liveness check, with record counts per table   |
+| GET    | `/api/hotels?name=`      | Search hotels by name, with their stays        |
+| GET    | `/api/users`             | The demo travelers                             |
+| GET    | `/api/bookings?user_id=` | Booking history, optionally for one traveler   |
+| POST   | `/api/bookings`          | Create a booking from `user_id` and `trip_id`  |
+| PATCH  | `/api/bookings/{id}`     | Cancel a booking; the record is kept           |
+| DELETE | `/api/bookings/{id}`     | Delete a booking                               |
+
+An unknown traveler, stay, or booking returns 404 with a readable message.
+`PATCH` only accepts `{"status": "cancelled"}`; anything else is a 422.
