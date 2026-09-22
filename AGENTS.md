@@ -4,7 +4,8 @@ Rules for anyone, human or agent, working in this repo.
 
 ## Scope
 
-- Backend code and its data reader live in `backend/`.
+- Backend code, the SQLite model and controller, and the supplied data live in
+  `backend/`.
 - Frontend code lives in `frontend/src/`.
 - The application name is Expedia Lite. Use it in the folder, the interface, and
   the documentation.
@@ -60,6 +61,31 @@ The booking features follow Model-View-Controller:
 - Confirm additions, updates, and deletions survive a browser refresh and a
   restart of both servers, and that record counts do not grow on restart.
 - Record the action, the expected result, and the observed result.
+
+## SmokeTest
+
+A repeatable check of the running app, done through the browser without editing
+code. It uses a known record from the supplied data: Valley Trail Inn (`H008`)
+and its one stay, State College Trail Weekend (`T008`).
+
+1. Search `Valley Trail`. Expect Valley Trail Inn, State College, PA, nightly
+   rate $100.00, with State College Trail Weekend, Oct 2 - Oct 4.
+2. Search `Sunset Palms`. Expect the no-results message and no table.
+3. As Demo Traveler 6, book State College Trail Weekend. Expect a new booking
+   with the next unused ID, `confirmed`, at the top of the history.
+4. Cancel it. Expect `cancelled`, still listed.
+5. Book it again, then Delete and Confirm delete. Expect that booking gone.
+6. Note the record counts from `GET /api/health`, refresh the browser, and
+   restart both servers. Expect steps 3 to 5 unchanged and the same counts.
+
+Report the observed result for each step.
+
+## AutoLoop
+
+Run the SmokeTest, inspect any failure, make the smallest in-scope fix, and run
+it again. Stop when it passes, after five correction cycles, or when a fix needs
+permission this file does not give. Report what passed and what remains
+unverified.
 
 ## Style
 

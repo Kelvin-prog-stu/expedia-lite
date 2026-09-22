@@ -23,10 +23,12 @@ update, and delete against SQLite, and nothing else runs SQL. It imports nothing
 from FastAPI, so the booking rules can be exercised without a running server.
 
 **FastAPI (`backend/main.py`)** is the boundary between the view and the
-controller. Each route validates its input through the Pydantic models in
-`schemas.py`, makes one controller call, and returns the result. Two
-application-level handlers turn a missing record into a 404 and a missing CSV
-into a readable 500, so no route contains a `try`/`except`.
+controller. Its routes handle requests: they receive each action from the View
+and pass the work to the database controller. Each route validates its input
+through the Pydantic models in `schemas.py`, makes one controller call, and
+returns the result. Two application-level handlers turn a missing record into a
+404 and a missing CSV into a readable 500, so no route contains a
+`try`/`except`.
 
 ## Data lifecycle
 
@@ -55,6 +57,20 @@ history. Deleting removes the row.
 
 Search runs the same way: `GET /api/hotels?name=` calls `search_hotels`, which
 now queries SQLite instead of reading the CSV files.
+
+## Controller contracts
+
+What each database controller function expects and returns. A failure raises
+`RecordNotFoundError`, which FastAPI returns as a 404 with the message shown,
+and nothing is written.
+
+| Function | Input | Output | Failure |
+| --- | --- | --- | --- |
+| `search_hotels` | Part of a hotel name | Matching hotels, each with its stays | None; no match is an empty list |
+| `list_bookings` | A `user_id`, or none for all | Bookings joined to traveler, stay, and hotel, newest first | None; an unknown traveler has an empty history |
+| `create_booking` | An existing `user_id` and `trip_id` | The saved booking with its new `booking_id`, `confirmed`, booked today | `No traveler with ID U999.` or `No stay with ID T999.` |
+| `cancel_booking` | An existing `booking_id` | The same booking, now `cancelled` | `No booking with ID B999.` |
+| `delete_booking` | An existing `booking_id` | Nothing; the row is gone | `No booking with ID B999.` |
 
 ## Request flow
 
