@@ -17,7 +17,7 @@ Commit submitted for Part 2: `ae0d7c31e07ffec7d00125563f2aeacdfca543ba` on `main
   on `main` and pushed.
 - The submitted commit adds this report, its screenshots, the demo video, and the
   final documentation updates on top of that merge. It changes no application
-  code.
+  code. Later commits on `main` change only this report.
 - The Part 1 checkpoint, `6f4b9f03727a96ceff711d7d92a4c0a5381d1df0`, is still in
   `main`'s history: `git merge-base --is-ancestor 6f4b9f0 main` succeeds.
 
@@ -204,6 +204,29 @@ Remaining limitations:
 Next task: give the booking history a loading state so a slow first request
 never looks like an empty history. The optional authentication and pricing
 bonus from In-class Activity 3 remains open.
+
+### Tools and process
+
+- **Tools.** Claude Code, running Claude Opus 5, was the coding agent. VS Code
+  was used for review and Source Control, Chrome for the app, and Windows
+  Snipping Tool for the demo recording.
+- **Who did what.** The agent wrote the code and documentation and drafted this
+  report from the recorded results. I directed each step, reviewed the changes
+  in VS Code before committing, and performed every browser check in the demo
+  video myself. The `curl` checks, the `npm run build` result, the 451 px width
+  check, and the `Inn` and empty searches were run by the agent, and I read its
+  output. The prompts that shaped Part 2 are in `prompts/`.
+- **A revised approach.** The first demo recording ran 3:22, over the
+  three-minute limit, and never deleted anything: Delete was clicked, which only
+  arms the confirm button, and then Keep. A practice run had also changed the
+  database. I reset the database, followed a shorter script, and recorded again.
+  The second take, at 2:17 with the delete confirmed, is the one submitted.
+- **Another correction.** The backend first failed to start in VS Code with
+  WinError 10048, because an earlier copy started from another terminal was
+  still holding port 8000. That copy was stopped, and the backend then started
+  normally.
+- **Remaining uncertainty.** The SmokeTest in `AGENTS.md` was written after these
+  checks and has not yet been run end to end.
 
 ## Demo video
 
