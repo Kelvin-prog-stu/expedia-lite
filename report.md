@@ -7,7 +7,7 @@ resolves: https://github.com/Kelvin-prog-stu/expedia-lite/blob/main/report.md
 
 Repository: https://github.com/Kelvin-prog-stu/expedia-lite
 
-Commit submitted for Part 2: `COMMIT_SHA` on `main`
+Commit submitted for Part 2: `ae0d7c31e07ffec7d00125563f2aeacdfca543ba` on `main`
 
 - Part 2 was built on the feature branch `feature/sqlite-crud` in three commits:
   `a9cbb08` (SQLite storage and the MVC booking controller), `d57f1a3` (the
