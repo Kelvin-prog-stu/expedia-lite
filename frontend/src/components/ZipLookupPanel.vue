@@ -1,27 +1,51 @@
 <script setup>
+const zipCode = defineModel({ type: String, default: '' })
+
 defineProps({
   location: { type: Object, default: null },
   isLoading: { type: Boolean, default: false },
   errorMessage: { type: String, default: '' },
+  validationMessage: { type: String, default: '' },
 })
 
-defineEmits(['look-up'])
+defineEmits(['submit'])
 </script>
 
 <template>
-  <section class="zip-demo" aria-labelledby="zip-demo-title">
+  <section class="zip-lookup" aria-labelledby="zip-lookup-title">
     <p class="eyebrow">Location data</p>
-    <h2 id="zip-demo-title">ZIP lookup demonstration</h2>
+    <h2 id="zip-lookup-title">Where are you headed?</h2>
     <p class="summary">
-      One fixed ZIP code, resolved by the backend through a public location service. The
-      service key stays on the server; the browser only receives the location.
+      Enter a United States ZIP code. The backend resolves it through a public location
+      service, so the service key stays on the server and the browser only receives the
+      location.
     </p>
 
-    <button type="button" class="zip-button" :disabled="isLoading" @click="$emit('look-up')">
-      {{ isLoading ? 'Looking up...' : 'Look up ZIP 16802' }}
-    </button>
+    <form class="zip-form" novalidate @submit.prevent="$emit('submit')">
+      <label class="field">
+        <span class="field-label">ZIP code</span>
+        <input
+          v-model="zipCode"
+          type="text"
+          inputmode="numeric"
+          maxlength="5"
+          placeholder="16802"
+          autocomplete="postal-code"
+          :aria-invalid="Boolean(validationMessage)"
+          aria-describedby="zip-help"
+        />
+      </label>
 
-    <p v-if="isLoading" class="pending" role="status">Asking the location service...</p>
+      <button type="submit" class="zip-button" :disabled="isLoading">
+        {{ isLoading ? 'Looking up...' : 'Find location' }}
+      </button>
+    </form>
+
+    <p id="zip-help" class="zip-help">Five digits, including any leading zeros.</p>
+
+    <p v-if="validationMessage" class="invalid" role="alert">{{ validationMessage }}</p>
+
+    <p v-else-if="isLoading" class="pending" role="status">Asking the location service...</p>
 
     <dl v-else-if="location" class="result">
       <div class="pair">
@@ -51,7 +75,7 @@ defineEmits(['look-up'])
 </template>
 
 <style scoped>
-.zip-demo {
+.zip-lookup {
   padding: 1.5rem 1.6rem 1.7rem;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -80,8 +104,46 @@ h2 {
   color: var(--muted);
 }
 
+.zip-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.field:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgb(22 104 227 / 18%);
+}
+
+.field-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.field input {
+  width: 7ch;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  outline: none;
+}
+
 .zip-button {
-  padding: 0.7rem 1.4rem;
+  padding: 0 1.6rem;
   border: 0;
   border-radius: 999px;
   background: var(--ink);
@@ -103,6 +165,18 @@ h2 {
 .zip-button:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
+}
+
+.zip-help {
+  margin: 0.6rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.invalid {
+  margin: 0.6rem 0 0;
+  color: #b3261e;
+  font-weight: 600;
 }
 
 .pending {

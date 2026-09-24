@@ -27,9 +27,6 @@ from seed import DataFileMissingError
 
 VERSION = "2.0.0"
 
-# The one ZIP code the guided demonstration looks up. Student entry comes later.
-DEMO_ZIP = "16802"
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -60,10 +57,10 @@ async def health() -> dict:
     }
 
 
-@app.get("/api/demo/zip-location", response_model=ZipLocation)
-async def demo_zip_location() -> ZipLocation:
-    """Demonstration: resolve one fixed ZIP code through the location provider."""
-    return ZipLocation(**asdict(geo.look_up_zip(DEMO_ZIP)))
+@app.get("/api/location", response_model=ZipLocation)
+async def look_up_location(zip: str = "") -> ZipLocation:
+    """Resolve a five digit US ZIP code to a point through the location provider."""
+    return ZipLocation(**asdict(geo.look_up_zip(zip)))
 
 
 @app.get("/api/hotels", response_model=SearchResponse)
@@ -117,6 +114,14 @@ async def handle_missing_data(request: Request, exc: DataFileMissingError) -> JS
     return JSONResponse(
         status_code=500,
         content={"error": {"code": "data_file_missing", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.InvalidZipError)
+async def handle_invalid_zip(request: Request, exc: geo.InvalidZipError) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={"error": {"code": "invalid_zip", "message": str(exc)}},
     )
 
 

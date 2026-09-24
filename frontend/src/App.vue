@@ -7,7 +7,7 @@ import {
   deleteBooking,
   listBookings,
   listUsers,
-  lookUpDemoZip,
+  lookUpZip,
   searchHotels,
 } from '@/api'
 import BookingHistory from '@/components/BookingHistory.vue'
@@ -42,8 +42,13 @@ const busyBookingId = ref('')
 const statusMessage = ref('')
 const errorMessage = ref('')
 
+// Five digits, as a string: 00501 is a real ZIP and must keep its leading zeros.
+const ZIP_PATTERN = /^\d{5}$/
+
+const zipQuery = ref('')
 const zipLocation = ref(null)
 const zipErrorMessage = ref('')
+const zipValidationMessage = ref('')
 const isLookingUpZip = ref(false)
 
 const travelerName = computed(
@@ -141,9 +146,21 @@ async function onLookUpZip() {
   // Clear the earlier answer first, so a stale location is never read as the new one.
   zipLocation.value = null
   zipErrorMessage.value = ''
+  zipValidationMessage.value = ''
+
+  const zipCode = zipQuery.value.trim()
+  if (!zipCode) {
+    zipValidationMessage.value = 'Enter a ZIP code.'
+    return
+  }
+  if (!ZIP_PATTERN.test(zipCode)) {
+    zipValidationMessage.value = 'A ZIP code is five digits, for example 16802.'
+    return
+  }
+
   isLookingUpZip.value = true
   try {
-    zipLocation.value = await lookUpDemoZip()
+    zipLocation.value = await lookUpZip(zipCode)
   } catch (error) {
     zipErrorMessage.value = error.message
   } finally {
@@ -296,10 +313,12 @@ onMounted(async () => {
       />
 
       <ZipLookupPanel
+        v-model="zipQuery"
         :location="zipLocation"
         :is-loading="isLookingUpZip"
         :error-message="zipErrorMessage"
-        @look-up="onLookUpZip"
+        :validation-message="zipValidationMessage"
+        @submit="onLookUpZip"
       />
     </div>
   </main>

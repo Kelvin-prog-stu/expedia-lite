@@ -45,9 +45,9 @@ not committed.
 
 ## Location service key
 
-The ZIP lookup demonstration asks Geoapify to resolve a ZIP code, and the
-request is made by the backend so the key never reaches the browser. The key
-lives in `.env` in the project root, beside `backend/` and `frontend/`:
+The ZIP lookup asks Geoapify to resolve a ZIP code, and the request is made by
+the backend so the key never reaches the browser. The key lives in `.env` in the
+project root, beside `backend/` and `frontend/`:
 
 ```
 GEOAPIFY_API_KEY=your-key-here
@@ -60,6 +60,10 @@ backend after editing `.env`**.
 Without a key the app still runs: `GET /api/health` reports
 `key is not configured`, and the ZIP panel shows that message instead of a
 location.
+
+A ZIP code is five digits and stays a string, so `00501` keeps its leading
+zeros. Anything else is refused before the provider is called, and an
+unresolvable ZIP comes back as a readable "no location found" message.
 
 ## Backend setup
 
@@ -106,7 +110,7 @@ other categories open Expedia in a new tab.
 | Method | Path                     | Purpose                                        |
 | ------ | ------------------------ | ---------------------------------------------- |
 | GET    | `/api/health`            | Liveness check, record counts, and key status  |
-| GET    | `/api/demo/zip-location` | Resolve the fixed demonstration ZIP `16802`    |
+| GET    | `/api/location?zip=`     | Resolve a five digit US ZIP code to a point    |
 | GET    | `/api/hotels?name=`      | Search hotels by name, with their stays        |
 | GET    | `/api/users`             | The demo travelers                             |
 | GET    | `/api/bookings?user_id=` | Booking history, optionally for one traveler   |

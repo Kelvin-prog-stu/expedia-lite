@@ -70,11 +70,12 @@ export function deleteBooking(bookingId) {
 }
 
 /**
- * Demonstration: resolve one fixed ZIP code to a location.
+ * Resolve a five digit US ZIP code to a location.
  *
  * The backend holds the provider's API key and makes the outside request, so
- * nothing about the provider appears in this file.
+ * nothing about the provider appears in this file. The ZIP stays a string, so
+ * leading zeros survive.
  */
-export function lookUpDemoZip() {
-  return request('/demo/zip-location')
+export function lookUpZip(zipCode) {
+  return request(`/location?${new URLSearchParams({ zip: zipCode })}`)
 }
