@@ -47,28 +47,29 @@ defineEmits(['submit'])
 
     <p v-else-if="isLoading" class="pending" role="status">Asking the location service...</p>
 
-    <dl v-else-if="location" class="result">
-      <div class="pair">
-        <dt>ZIP code</dt>
-        <dd>{{ location.postcode }}</dd>
-      </div>
-      <div v-if="location.locality" class="pair">
-        <dt>Locality</dt>
-        <dd>{{ location.locality }}</dd>
-      </div>
-      <div class="pair">
-        <dt>Country</dt>
-        <dd>{{ location.country_code }}</dd>
-      </div>
-      <div class="pair">
-        <dt>Latitude</dt>
-        <dd>{{ location.latitude }}</dd>
-      </div>
-      <div class="pair">
-        <dt>Longitude</dt>
-        <dd>{{ location.longitude }}</dd>
-      </div>
-    </dl>
+    <div v-else-if="location" class="table-wrap">
+      <table>
+        <caption class="visually-hidden">Location returned for the ZIP code entered</caption>
+        <thead>
+          <tr>
+            <th scope="col">ZIP code</th>
+            <th scope="col">Locality</th>
+            <th scope="col">Country</th>
+            <th scope="col">Latitude</th>
+            <th scope="col">Longitude</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="zip">{{ location.postcode }}</td>
+            <td>{{ location.locality || 'Not provided' }}</td>
+            <td>{{ location.country_code }}</td>
+            <td>{{ location.latitude }}</td>
+            <td>{{ location.longitude }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <p v-else-if="errorMessage" class="failed" role="alert">{{ errorMessage }}</p>
   </section>
@@ -184,27 +185,45 @@ h2 {
   color: var(--muted);
 }
 
-.result {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem 2.5rem;
+.table-wrap {
+  /* Contains the absolutely positioned visually-hidden caption, which would
+     otherwise escape this scroll container and widen the whole page. */
+  position: relative;
+  overflow-x: auto;
   margin: 1.1rem 0 0;
-  padding: 1rem 1.2rem;
-  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   background: #fff;
 }
 
-.pair dt {
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th,
+td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+thead th {
+  background: var(--surface);
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--muted);
 }
 
-.pair dd {
-  margin: 0.15rem 0 0;
-  font-size: 1.05rem;
+tbody td {
+  border-bottom: 0;
+}
+
+.zip {
   font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 .failed {
