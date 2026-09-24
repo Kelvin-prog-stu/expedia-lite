@@ -43,6 +43,24 @@ To reset to the supplied data, stop the backend and delete
 `backend/expedia_lite.db`. The next start seeds it again. The database file is
 not committed.
 
+## Location service key
+
+The ZIP lookup demonstration asks Geoapify to resolve a ZIP code, and the
+request is made by the backend so the key never reaches the browser. The key
+lives in `.env` in the project root, beside `backend/` and `frontend/`:
+
+```
+GEOAPIFY_API_KEY=your-key-here
+```
+
+Get a key from https://myprojects.geoapify.com/. `.env` is ignored by Git and is
+never committed. `backend/config.py` reads it once at import, so **restart the
+backend after editing `.env`**.
+
+Without a key the app still runs: `GET /api/health` reports
+`key is not configured`, and the ZIP panel shows that message instead of a
+location.
+
 ## Backend setup
 
 ```bash
@@ -87,7 +105,8 @@ other categories open Expedia in a new tab.
 
 | Method | Path                     | Purpose                                        |
 | ------ | ------------------------ | ---------------------------------------------- |
-| GET    | `/api/health`            | Liveness check, with record counts per table   |
+| GET    | `/api/health`            | Liveness check, record counts, and key status  |
+| GET    | `/api/demo/zip-location` | Resolve the fixed demonstration ZIP `16802`    |
 | GET    | `/api/hotels?name=`      | Search hotels by name, with their stays        |
 | GET    | `/api/users`             | The demo travelers                             |
 | GET    | `/api/bookings?user_id=` | Booking history, optionally for one traveler   |

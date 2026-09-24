@@ -67,3 +67,13 @@ class BookingUpdate(BaseModel):
     """Only cancellation is allowed; the record is kept."""
 
     status: Literal["cancelled"]
+
+
+class ZipLocation(BaseModel):
+    """A ZIP code resolved to a point by the location provider."""
+
+    postcode: str
+    country_code: str
+    latitude: float
+    longitude: float
+    locality: str | None = None

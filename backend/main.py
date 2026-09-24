@@ -5,16 +5,30 @@ controller, and shape the response. All SQL lives in database_controller.py.
 """
 
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import config
 import database_controller as db
-from schemas import Booking, BookingCreate, BookingUpdate, HotelResult, SearchResponse, User
+import geo_controller as geo
+from schemas import (
+    Booking,
+    BookingCreate,
+    BookingUpdate,
+    HotelResult,
+    SearchResponse,
+    User,
+    ZipLocation,
+)
 from seed import DataFileMissingError
 
 VERSION = "2.0.0"
+
+# The one ZIP code the guided demonstration looks up. Student entry comes later.
+DEMO_ZIP = "16802"
 
 
 @asynccontextmanager
@@ -38,7 +52,18 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "version": VERSION, "records": db.record_counts()}
+    return {
+        "status": "ok",
+        "version": VERSION,
+        "records": db.record_counts(),
+        "geoapify": config.geoapify_key_status(),
+    }
+
+
+@app.get("/api/demo/zip-location", response_model=ZipLocation)
+async def demo_zip_location() -> ZipLocation:
+    """Demonstration: resolve one fixed ZIP code through the location provider."""
+    return ZipLocation(**asdict(geo.look_up_zip(DEMO_ZIP)))
 
 
 @app.get("/api/hotels", response_model=SearchResponse)
@@ -92,4 +117,30 @@ async def handle_missing_data(request: Request, exc: DataFileMissingError) -> JS
     return JSONResponse(
         status_code=500,
         content={"error": {"code": "data_file_missing", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.KeyNotConfiguredError)
+async def handle_key_missing(request: Request, exc: geo.KeyNotConfiguredError) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"error": {"code": "geoapify_not_configured", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.LocationNotFoundError)
+async def handle_location_missing(
+    request: Request, exc: geo.LocationNotFoundError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"error": {"code": "location_not_found", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.LocationServiceError)
+async def handle_location_service(request: Request, exc: geo.LocationServiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={"error": {"code": "location_service_failed", "message": str(exc)}},
     )

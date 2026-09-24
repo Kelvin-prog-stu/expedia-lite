@@ -68,3 +68,13 @@ export function cancelBooking(bookingId) {
 export function deleteBooking(bookingId) {
   return request(`/bookings/${encodeURIComponent(bookingId)}`, { method: 'DELETE' })
 }
+
+/**
+ * Demonstration: resolve one fixed ZIP code to a location.
+ *
+ * The backend holds the provider's API key and makes the outside request, so
+ * nothing about the provider appears in this file.
+ */
+export function lookUpDemoZip() {
+  return request('/demo/zip-location')
+}

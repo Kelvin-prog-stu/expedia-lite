@@ -7,12 +7,14 @@ import {
   deleteBooking,
   listBookings,
   listUsers,
+  lookUpDemoZip,
   searchHotels,
 } from '@/api'
 import BookingHistory from '@/components/BookingHistory.vue'
 import DateRangePicker from '@/components/DateRangePicker.vue'
 import SearchResults from '@/components/SearchResults.vue'
 import TravelIcon from '@/components/TravelIcon.vue'
+import ZipLookupPanel from '@/components/ZipLookupPanel.vue'
 
 // Stays is handled here; every other category opens Expedia in a new tab.
 const CATEGORIES = [
@@ -39,6 +41,10 @@ const bookingTripId = ref('')
 const busyBookingId = ref('')
 const statusMessage = ref('')
 const errorMessage = ref('')
+
+const zipLocation = ref(null)
+const zipErrorMessage = ref('')
+const isLookingUpZip = ref(false)
 
 const travelerName = computed(
   () => users.value.find((u) => u.user_id === selectedUserId.value)?.display_name ?? '',
@@ -128,6 +134,20 @@ async function onDelete(bookingId) {
     fail(error)
   } finally {
     busyBookingId.value = ''
+  }
+}
+
+async function onLookUpZip() {
+  // Clear the earlier answer first, so a stale location is never read as the new one.
+  zipLocation.value = null
+  zipErrorMessage.value = ''
+  isLookingUpZip.value = true
+  try {
+    zipLocation.value = await lookUpDemoZip()
+  } catch (error) {
+    zipErrorMessage.value = error.message
+  } finally {
+    isLookingUpZip.value = false
   }
 }
 
@@ -273,6 +293,13 @@ onMounted(async () => {
         :busy-id="busyBookingId"
         @cancel="onCancel"
         @delete="onDelete"
+      />
+
+      <ZipLookupPanel
+        :location="zipLocation"
+        :is-loading="isLookingUpZip"
+        :error-message="zipErrorMessage"
+        @look-up="onLookUpZip"
       />
     </div>
   </main>
