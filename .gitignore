@@ -9,12 +9,14 @@ node_modules/
 dist/
 .vite/
 
-# Environment
+# Environment: local settings, including the Geoapify API key. Never committed.
 .env
-.env.local
+.env.*
+!.env.example
 
 # Editors / OS
 .vscode/
+.claude/
 .idea/
 .DS_Store
 Thumbs.db
