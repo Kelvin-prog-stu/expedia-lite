@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 
 const props = defineProps({
   hotels: { type: Array, required: true },
@@ -9,6 +9,9 @@ const props = defineProps({
 defineEmits(['select'])
 
 const NO_NAME = 'Name not provided'
+const EDGE_GAP_PX = 8
+
+const listElement = ref(null)
 
 // The card elements, by place id. Plain on purpose: nothing renders from it.
 const cards = {}
@@ -19,19 +22,31 @@ function distanceText(metres) {
   return `${(metres / 1000).toFixed(1)} km from the ZIP code centre`
 }
 
-// A pin chosen on the map may sit outside the list's scroll area.
+// A pin chosen on the map may sit outside the list's scroll area. Scroll the list itself.
+// scrollIntoView would also scroll the page, which drags the map out of sight when the
+// two columns stack.
 watch(
   () => props.selectedId,
   async (placeId) => {
-    if (!placeId) return
+    const list = listElement.value
+    if (!placeId || !list) return
     await nextTick()
-    cards[placeId]?.scrollIntoView({ block: 'nearest' })
+
+    const card = cards[placeId]
+    if (!card) return
+
+    const cardBottom = card.offsetTop + card.offsetHeight
+    if (card.offsetTop < list.scrollTop) {
+      list.scrollTop = card.offsetTop - EDGE_GAP_PX
+    } else if (cardBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = cardBottom - list.clientHeight + EDGE_GAP_PX
+    }
   },
 )
 </script>
 
 <template>
-  <ol class="hotel-list" aria-label="Hotels near the ZIP code, nearest first">
+  <ol ref="listElement" class="hotel-list" aria-label="Hotels near the ZIP code, nearest first">
     <li
       v-for="(hotel, index) in hotels"
       :key="hotel.place_id"
@@ -69,6 +84,8 @@ watch(
 
 <style scoped>
 .hotel-list {
+  /* Makes each card's offsetTop relative to the list, which the scrolling above uses. */
+  position: relative;
   display: grid;
   gap: 0.6rem;
   max-height: 32rem;

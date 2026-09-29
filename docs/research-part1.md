@@ -166,3 +166,18 @@ and map code. These are the places the finished interface differs, and why.
 6. **The ZIP centre table from the graded in-class activity stays** above the
    results, so the search centre is stated twice: in the table and in the
    summary line.
+7. **Markers were drawn in the wrong place.** The first real-size screenshot
+   showed the ZIP centre diamond far outside the dashed radius circle it should
+   sit in the middle of. The cause was CSS `rotate` and `scale` on the marker
+   element: they are applied before Leaflet's own `translate3d`, so they rotated
+   and shrank the marker's offset. A selected pin, which scaled up, would have
+   drifted the same way. My earlier checks only compared CSS classes, which is
+   why they passed. Those effects now sit on an inner element. A geometry check
+   confirmed the diamond is 0.3 px from the circle's centre, and that a selected
+   pin is centred on its true position at 1.25 times the size.
+8. **Selecting a pin no longer scrolls the page.** The list scrolled to the
+   chosen card with `scrollIntoView`, which also scrolls the window. When the
+   two columns stack, that would drag the map out of view on every pin click. The
+   list now scrolls only itself. Measured at 1280 px and 600 px wide: selecting
+   the 15th hotel scrolled the list 1702 px and 1432 px, and moved the page and
+   the map by 0.

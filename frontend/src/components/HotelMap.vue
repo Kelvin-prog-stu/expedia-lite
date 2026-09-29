@@ -39,10 +39,13 @@ function textContent(text) {
   return span
 }
 
+// Leaflet positions the outer icon element with its own transform. Anything visual that
+// scales or rotates (the selected pin, the diamond) therefore lives on the inner .dot,
+// or it would scale and rotate the marker's offset and land in the wrong place.
 function pinIcon(number) {
   return L.divIcon({
     className: 'hotel-pin',
-    html: `<span>${number}</span>`,
+    html: `<span class="dot">${number}</span>`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
   })
@@ -51,6 +54,7 @@ function pinIcon(number) {
 function centreIcon() {
   return L.divIcon({
     className: 'centre-mark',
+    html: '<span class="dot"></span>',
     iconSize: [22, 22],
     iconAnchor: [11, 11],
   })
@@ -222,22 +226,26 @@ watch(() => props.selectedId, () => applySelection(true))
   background: #5a6079;
 }
 
-/* Leaflet builds its icons outside Vue's templates, so these must reach in. */
+/* Leaflet builds its icons outside Vue's templates, so these must reach in. The outer
+   element is only a positioned box; the look and any transform belong to .dot. */
 .map :deep(.hotel-pin) {
+  cursor: pointer;
+}
+
+.map :deep(.hotel-pin .dot) {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 100%;
+  height: 100%;
   border: 2px solid #fff;
   border-radius: 50%;
   background: #5a6079;
   box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
   color: #fff;
   font: 700 13px/1 Arial, Helvetica, sans-serif;
-  cursor: pointer;
 }
 
-.map :deep(.hotel-pin.selected) {
+.map :deep(.hotel-pin.selected .dot) {
   background: var(--brand);
   box-shadow:
     0 0 0 4px rgb(22 104 227 / 30%),
@@ -246,13 +254,18 @@ watch(() => props.selectedId, () => applySelection(true))
 }
 
 .map :deep(.hotel-pin:focus-visible) {
+  outline: none;
+}
+
+.map :deep(.hotel-pin:focus-visible .dot) {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
-.map :deep(.centre-mark) {
-  width: 22px;
-  height: 22px;
+.map :deep(.centre-mark .dot) {
+  display: block;
+  width: 100%;
+  height: 100%;
   border: 2px solid #fff;
   background: var(--ink);
   box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
