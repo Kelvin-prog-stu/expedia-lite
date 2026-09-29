@@ -77,3 +77,27 @@ class ZipLocation(BaseModel):
     latitude: float
     longitude: float
     locality: str | None = None
+
+
+class NearbyHotel(BaseModel):
+    """A place the provider calls a hotel. It has no price: the provider supplies none."""
+
+    place_id: str
+    name: str | None = None
+    latitude: float
+    longitude: float
+    address: str | None = None
+    distance_m: int | None = None
+    website: str | None = None
+
+
+class NearbyHotelsResponse(BaseModel):
+    """Hotels near the point a ZIP code resolved to. An empty list is a real answer."""
+
+    location: ZipLocation
+    radius_m: int
+    limit: int
+    may_have_more: bool
+    omitted_count: int
+    attribution: str | None = None
+    hotels: list[NearbyHotel]

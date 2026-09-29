@@ -19,6 +19,7 @@ from schemas import (
     BookingCreate,
     BookingUpdate,
     HotelResult,
+    NearbyHotelsResponse,
     SearchResponse,
     User,
     ZipLocation,
@@ -61,6 +62,12 @@ async def health() -> dict:
 async def look_up_location(zip: str = "") -> ZipLocation:
     """Resolve a five digit US ZIP code to a point through the location provider."""
     return ZipLocation(**asdict(geo.look_up_zip(zip)))
+
+
+@app.get("/api/nearby-hotels", response_model=NearbyHotelsResponse)
+async def find_nearby_hotels(zip: str = "") -> NearbyHotelsResponse:
+    """Hotels within 5 km of the point a five digit US ZIP code resolves to."""
+    return NearbyHotelsResponse(**asdict(geo.hotels_near_zip(zip)))
 
 
 @app.get("/api/hotels", response_model=SearchResponse)
@@ -140,6 +147,14 @@ async def handle_location_missing(
     return JSONResponse(
         status_code=404,
         content={"error": {"code": "location_not_found", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.RateLimitedError)
+async def handle_rate_limited(request: Request, exc: geo.RateLimitedError) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"error": {"code": "rate_limited", "message": str(exc)}},
     )
 
 
