@@ -29,9 +29,16 @@ The booking features follow Model-View-Controller:
   delete. No other module runs SQL, and this one imports nothing from FastAPI.
 - `main.py` routes are thin: validate through `schemas.py`, make one controller
   call, return the result.
+- `geo_controller.py` is the controller for the public location API. It is the
+  only module that calls Geoapify, it imports nothing from FastAPI, and its
+  contract is written at the top of the file. `config.py` reads `.env`.
 - Type-hint every function signature.
 - Use parameterized queries. Never build SQL from user input.
 - Return structured errors, not raw exception text.
+- Never put the API key, the request URL, or provider exception text in a
+  response or a log. The key travels in the query string.
+- A provider failure is never reported as an empty result, and a ZIP the provider
+  did not establish is never turned into a search somewhere else.
 
 ## Frontend
 
@@ -39,6 +46,17 @@ The booking features follow Model-View-Controller:
 - Keep API calls in `src/api.js`; components do not call `fetch` directly.
 - Every input needs a label. Every error message needs `role="alert"`.
 - Tables need real `<th scope="col">` headers with readable labels.
+- Text from the location service is untrusted: hotel names come from
+  OpenStreetMap, which anyone can edit. Render it as text. Never use `v-html`,
+  and never hand Leaflet a string to show; give it a text node.
+- Show only what the provider returned. No invented prices, ratings, photos, or
+  availability. A missing field gets an honest label or is left out.
+- Keep both credits visible: "© OpenStreetMap contributors" on the map and
+  "Powered by Geoapify" with the results.
+- The Geoapify key stays in the backend. Never copy it into frontend code, a
+  `VITE_` variable, or a screenshot. The map's tiles need no key.
+- Selecting a hotel in the list or on the map selects it in the other, by
+  provider place id, and both work from the keyboard.
 
 ## Data
 
@@ -79,6 +97,20 @@ and its one stay, State College Trail Weekend (`T008`).
    restart both servers. Expect steps 3 to 5 unchanged and the same counts.
 
 Report the observed result for each step.
+
+Live hotel search, added for Assignment 2. Never depend on how many hotels the
+service returns for a ZIP; check behaviour, not a count.
+
+7. Enter `16802`. Expect a summary naming State College, a numbered list and the
+   same number of pins, one centre marker, and both credits.
+8. Select a hotel in the list, then a different one on the map. Expect exactly
+   one hotel highlighted in both places each time.
+9. Enter `123`. Expect the five-digit message and no request. Enter `00000`.
+   Expect "ZIP code not found". Enter `99999`. Expect a successful search with no
+   hotels and the map still shown.
+10. Stop the backend and search again. Expect "Backend not reachable", not an
+    empty list.
+11. Run `backend/checks/check_geo.py`. Expect every check to pass.
 
 ## AutoLoop
 

@@ -134,3 +134,35 @@ empty result. Expedia's list, which mixed in properties 12 to 32 miles away, is
 why the summary states the search centre and the 5 km radius, so a traveler can
 see what "nearby" means here. The list-and-map layout follows Booking.com; the
 separate overlay on Expedia is what to avoid.
+
+## Revisions made while building (added 2026-09-29, after the mockup)
+
+The sections above and the mockup are kept as they were written before the list
+and map code. These are the places the finished interface differs, and why.
+
+1. **"Powered by Geoapify" was added.** Reading Geoapify's pricing and terms
+   pages during the build showed the free plan requires OpenStreetMap
+   attribution and Geoapify's own: a visible "Powered by Geoapify" link. The
+   mockup showed only the OpenStreetMap credit on the map. The results section
+   now carries both. The same pages said nothing about caching or storing
+   results, so Part 2 will keep only what a traveler chooses to save.
+2. **The map pans only when it needs to.** The mockup said selecting a hotel
+   recentres the map. In use that would move the map on every click of a pin
+   that is already in view, so it now pans only when the selected pin is near or
+   past the edge. The list scrolls to the selected card in the same way.
+3. **Enter and Space are handled on `keydown`.** The mockup said pins activate on
+   Enter. Testing with real key presses showed Leaflet answers Enter only
+   through the deprecated `keypress` event and never answers Space, so Enter
+   did nothing in this browser. Both keys are now handled on `keydown`, as a
+   button does.
+4. **A backend that is down gets its own message.** The mockup listed "request
+   failed" as one state. In development the proxy answers with a bare HTTP 500
+   when nothing listens on port 8000, which first showed as "Request failed with
+   status 500." It now says the backend could not be reached.
+5. **Hotel names are treated as untrusted text.** OpenStreetMap is editable by
+   anyone, and Leaflet reads a string tooltip as HTML, so tooltip text is built
+   from a text node. A test with a name containing an `<img onerror>` tag showed
+   it rendered as plain text in the list, the tooltip, and the pin's label.
+6. **The ZIP centre table from the graded in-class activity stays** above the
+   results, so the search centre is stated twice: in the table and in the
+   summary line.
