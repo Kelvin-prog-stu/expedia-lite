@@ -5,13 +5,14 @@ import {
   cancelBooking,
   createBooking,
   deleteBooking,
+  findNearbyHotels,
   listBookings,
   listUsers,
-  lookUpZip,
   searchHotels,
 } from '@/api'
 import BookingHistory from '@/components/BookingHistory.vue'
 import DateRangePicker from '@/components/DateRangePicker.vue'
+import NearbyHotels from '@/components/NearbyHotels.vue'
 import SearchResults from '@/components/SearchResults.vue'
 import TravelIcon from '@/components/TravelIcon.vue'
 import ZipLookupPanel from '@/components/ZipLookupPanel.vue'
@@ -46,10 +47,27 @@ const errorMessage = ref('')
 const ZIP_PATTERN = /^\d{5}$/
 
 const zipQuery = ref('')
-const zipLocation = ref(null)
-const zipErrorMessage = ref('')
+const nearby = ref(null)
+const selectedPlaceId = ref('')
+const zipProblem = ref(null)
 const zipValidationMessage = ref('')
 const isLookingUpZip = ref(false)
+
+const PROBLEM_TITLES = {
+  location_not_found: 'ZIP code not found',
+  rate_limited: 'Too many requests',
+  network: 'Backend not reachable',
+}
+
+// The service answering "no such ZIP" is a different thing from the service failing,
+// and neither is the same as a successful search that finds no hotels.
+function problemFrom(error) {
+  return {
+    kind: error.code === 'location_not_found' ? 'unresolved' : 'failed',
+    title: PROBLEM_TITLES[error.code] ?? 'Could not load hotels',
+    message: error.message,
+  }
+}
 
 const travelerName = computed(
   () => users.value.find((u) => u.user_id === selectedUserId.value)?.display_name ?? '',
@@ -143,9 +161,10 @@ async function onDelete(bookingId) {
 }
 
 async function onLookUpZip() {
-  // Clear the earlier answer first, so a stale location is never read as the new one.
-  zipLocation.value = null
-  zipErrorMessage.value = ''
+  // Clear the earlier answer first, so a stale search is never read as the new one.
+  nearby.value = null
+  selectedPlaceId.value = ''
+  zipProblem.value = null
   zipValidationMessage.value = ''
 
   const zipCode = zipQuery.value.trim()
@@ -160,12 +179,17 @@ async function onLookUpZip() {
 
   isLookingUpZip.value = true
   try {
-    zipLocation.value = await lookUpZip(zipCode)
+    nearby.value = await findNearbyHotels(zipCode)
   } catch (error) {
-    zipErrorMessage.value = error.message
+    if (error.code === 'invalid_zip') zipValidationMessage.value = error.message
+    else zipProblem.value = problemFrom(error)
   } finally {
     isLookingUpZip.value = false
   }
+}
+
+function onSelectHotel(placeId) {
+  selectedPlaceId.value = placeId
 }
 
 async function onTravelerChange() {
@@ -195,6 +219,7 @@ onMounted(async () => {
       </a>
       <nav class="topnav" aria-label="Main">
         <a href="#search">Find a stay</a>
+        <a href="#zip-search">Hotels by ZIP</a>
         <a href="#bookings">My bookings</a>
         <a href="https://www.expedia.com/" target="_blank" rel="noopener noreferrer">
           Explore Expedia <TravelIcon name="external" :size="13" />
@@ -291,6 +316,23 @@ onMounted(async () => {
     </div>
 
     <div class="content">
+      <div class="zip-search">
+        <ZipLookupPanel
+          v-model="zipQuery"
+          :location="nearby?.location ?? null"
+          :is-loading="isLookingUpZip"
+          :problem="zipProblem"
+          :validation-message="zipValidationMessage"
+          @submit="onLookUpZip"
+        />
+        <NearbyHotels
+          :nearby="nearby"
+          :is-loading="isLookingUpZip"
+          :selected-id="selectedPlaceId"
+          @select="onSelectHotel"
+        />
+      </div>
+
       <SearchResults
         v-if="results"
         :results="results"
@@ -312,14 +354,6 @@ onMounted(async () => {
         @delete="onDelete"
       />
 
-      <ZipLookupPanel
-        v-model="zipQuery"
-        :location="zipLocation"
-        :is-loading="isLookingUpZip"
-        :error-message="zipErrorMessage"
-        :validation-message="zipValidationMessage"
-        @submit="onLookUpZip"
-      />
     </div>
   </main>
 
@@ -636,6 +670,11 @@ a:focus-visible {
   grid-template-columns: minmax(0, 1fr);
   gap: 3rem;
   padding: 2.5rem 0 3rem;
+}
+
+.zip-search {
+  display: grid;
+  gap: 1.5rem;
 }
 
 .placeholder {

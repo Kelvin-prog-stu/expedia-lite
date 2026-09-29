@@ -4,7 +4,9 @@ const zipCode = defineModel({ type: String, default: '' })
 defineProps({
   location: { type: Object, default: null },
   isLoading: { type: Boolean, default: false },
-  errorMessage: { type: String, default: '' },
+  // { kind: 'unresolved' | 'failed', title, message }. Kept apart on purpose: a ZIP the
+  // service cannot place is not the same thing as the service failing.
+  problem: { type: Object, default: null },
   validationMessage: { type: String, default: '' },
 })
 
@@ -12,13 +14,13 @@ defineEmits(['submit'])
 </script>
 
 <template>
-  <section class="zip-lookup" aria-labelledby="zip-lookup-title">
-    <p class="eyebrow">Location data</p>
-    <h2 id="zip-lookup-title">Where are you headed?</h2>
+  <section id="zip-search" class="zip-lookup" aria-labelledby="zip-lookup-title">
+    <p class="eyebrow">Live hotel search</p>
+    <h2 id="zip-lookup-title">Find hotels near a ZIP code</h2>
     <p class="summary">
       Enter a United States ZIP code. The backend resolves it through a public location
-      service, so the service key stays on the server and the browser only receives the
-      location.
+      service, then looks for hotels within 5 km of the point it returns. The service key
+      stays on the server; the browser only receives locations.
     </p>
 
     <form class="zip-form" novalidate @submit.prevent="$emit('submit')">
@@ -71,7 +73,10 @@ defineEmits(['submit'])
       </table>
     </div>
 
-    <p v-else-if="errorMessage" class="failed" role="alert">{{ errorMessage }}</p>
+    <div v-else-if="problem" class="problem" :class="problem.kind" role="alert">
+      <strong>{{ problem.title }}</strong>
+      <span>{{ problem.message }}</span>
+    </div>
   </section>
 </template>
 
@@ -226,13 +231,26 @@ tbody td {
   letter-spacing: 0.06em;
 }
 
-.failed {
+.problem {
+  display: grid;
+  gap: 0.15rem;
   margin: 1.1rem 0 0;
   padding: 0.85rem 1.1rem;
-  border-left: 4px solid #b3261e;
   border-radius: 10px;
+  font-weight: 600;
+}
+
+/* A ZIP the service cannot place: the service worked, the answer was no. */
+.problem.unresolved {
+  border-left: 4px solid var(--promo);
+  background: #fff8e1;
+  color: #6b5313;
+}
+
+/* The service or the backend did not answer. */
+.problem.failed {
+  border-left: 4px solid #b3261e;
   background: #fbeceb;
   color: #8a1f18;
-  font-weight: 600;
 }
 </style>

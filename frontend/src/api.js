@@ -8,25 +8,55 @@
 
 const BASE_URL = '/api'
 
-async function readErrorMessage(response) {
+const BACKEND_UNREACHABLE =
+  'The app could not get an answer from its backend. Check that it is running, then try again.'
+
+/**
+ * A failed request. `code` is the backend's error code ("location_not_found",
+ * "rate_limited", ...) so a caller can tell kinds of failure apart without
+ * reading the message. It is "network" when the backend could not be reached.
+ */
+export class ApiError extends Error {
+  constructor(message, code = 'unknown', status = 0) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = code
+    this.status = status
+  }
+}
+
+async function readError(response) {
   try {
     const body = await response.json()
-    if (body?.error?.message) return body.error.message
-    if (Array.isArray(body?.detail) && body.detail[0]?.msg) return body.detail[0].msg
+    if (body?.error?.message) {
+      return new ApiError(body.error.message, body.error.code, response.status)
+    }
+    if (Array.isArray(body?.detail) && body.detail[0]?.msg) {
+      return new ApiError(body.detail[0].msg, 'validation', response.status)
+    }
   } catch {
-    // Fall through to the generic message below.
+    // Not JSON: fall through to the generic messages below.
   }
-  return `Request failed with status ${response.status}.`
+  // A server error with no error body did not come from our backend's own handlers. In
+  // development that is the Vite proxy answering because nothing is listening on port 8000.
+  if (response.status >= 500) return new ApiError(BACKEND_UNREACHABLE, 'network', response.status)
+  return new ApiError(`Request failed with status ${response.status}.`, 'unknown', response.status)
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    })
+  } catch {
+    // fetch only throws when nothing answered at all.
+    throw new ApiError(BACKEND_UNREACHABLE, 'network')
+  }
 
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response))
+    throw await readError(response)
   }
 
   return response.status === 204 ? null : response.json()
@@ -70,12 +100,12 @@ export function deleteBooking(bookingId) {
 }
 
 /**
- * Resolve a five digit US ZIP code to a location.
+ * Hotels within 5 km of the point a five digit US ZIP code resolves to.
  *
- * The backend holds the provider's API key and makes the outside request, so
+ * The backend holds the provider's API key and makes both outside requests, so
  * nothing about the provider appears in this file. The ZIP stays a string, so
- * leading zeros survive.
+ * leading zeros survive. An empty `hotels` list is a successful search.
  */
-export function lookUpZip(zipCode) {
-  return request(`/location?${new URLSearchParams({ zip: zipCode })}`)
+export function findNearbyHotels(zipCode) {
+  return request(`/nearby-hotels?${new URLSearchParams({ zip: zipCode })}`)
 }
