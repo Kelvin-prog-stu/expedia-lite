@@ -5,13 +5,25 @@ controller, and shape the response. All SQL lives in database_controller.py.
 """
 
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import config
 import database_controller as db
-from schemas import Booking, BookingCreate, BookingUpdate, HotelResult, SearchResponse, User
+import geo_controller as geo
+from schemas import (
+    Booking,
+    BookingCreate,
+    BookingUpdate,
+    HotelResult,
+    NearbyHotelsResponse,
+    SearchResponse,
+    User,
+    ZipLocation,
+)
 from seed import DataFileMissingError
 
 VERSION = "2.0.0"
@@ -38,7 +50,24 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "version": VERSION, "records": db.record_counts()}
+    return {
+        "status": "ok",
+        "version": VERSION,
+        "records": db.record_counts(),
+        "geoapify": config.geoapify_key_status(),
+    }
+
+
+@app.get("/api/location", response_model=ZipLocation)
+async def look_up_location(zip: str = "") -> ZipLocation:
+    """Resolve a five digit US ZIP code to a point through the location provider."""
+    return ZipLocation(**asdict(geo.look_up_zip(zip)))
+
+
+@app.get("/api/nearby-hotels", response_model=NearbyHotelsResponse)
+async def find_nearby_hotels(zip: str = "") -> NearbyHotelsResponse:
+    """Hotels within 5 km of the point a five digit US ZIP code resolves to."""
+    return NearbyHotelsResponse(**asdict(geo.hotels_near_zip(zip)))
 
 
 @app.get("/api/hotels", response_model=SearchResponse)
@@ -92,4 +121,46 @@ async def handle_missing_data(request: Request, exc: DataFileMissingError) -> JS
     return JSONResponse(
         status_code=500,
         content={"error": {"code": "data_file_missing", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.InvalidZipError)
+async def handle_invalid_zip(request: Request, exc: geo.InvalidZipError) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={"error": {"code": "invalid_zip", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.KeyNotConfiguredError)
+async def handle_key_missing(request: Request, exc: geo.KeyNotConfiguredError) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"error": {"code": "geoapify_not_configured", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.LocationNotFoundError)
+async def handle_location_missing(
+    request: Request, exc: geo.LocationNotFoundError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"error": {"code": "location_not_found", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.RateLimitedError)
+async def handle_rate_limited(request: Request, exc: geo.RateLimitedError) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"error": {"code": "rate_limited", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(geo.LocationServiceError)
+async def handle_location_service(request: Request, exc: geo.LocationServiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={"error": {"code": "location_service_failed", "message": str(exc)}},
     )

@@ -1,3 +1,9 @@
 # Runtime dependencies, pinned to what the project is verified against.
 # fastapi[standard] pulls uvicorn, starlette and pydantic.
 fastapi[standard]==0.141.1
+
+# Already present through fastapi[standard], and declared here because the
+# backend imports them directly: the .env reader and the HTTP client used for
+# the location lookup.
+python-dotenv==1.2.3
+httpx==0.28.1
