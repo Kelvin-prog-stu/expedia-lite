@@ -69,6 +69,23 @@ The booking features follow Model-View-Controller:
 - Cancelling keeps the record and changes its status. Only Delete removes it.
 - `backend/expedia_lite.db` is not committed. Deleting it resets the app to the
   supplied data on the next start.
+- `saved_hotels` holds hotels saved from the live API, keyed by the provider's
+  place id exactly as given. `demo_hotel_nights` holds one simulated classroom rate
+  and room count per saved hotel per night. That rate and those rooms are never
+  provider data, and the interface must say so. Both tables are separate from
+  `hotels`, which stays the supplied sample records.
+- `saved_hotel_zips` records which ZIP search a saved hotel came from, with that
+  search's centre and radius. Saving and removing touch all three tables in one
+  transaction, and a repeat save adds only what is missing and never overwrites. Use
+  `ON CONFLICT DO NOTHING`, never `INSERT OR IGNORE`, which would also swallow a failed
+  CHECK and report invalid data as saved.
+- The ZIP lookup is local first: saved hotels for the ZIP, and only if that request
+  succeeds with none, the live search. A storage error is an error, never an empty
+  result, and never falls through to the live search.
+- Tests that change data run against a throwaway database (`EXPEDIA_DB_PATH`), never the
+  real one.
+- Schema changes are additive and repeatable: `CREATE TABLE IF NOT EXISTS` in
+  `models.py`, applied on every start. Never alter or drop an Assignment 1 table.
 
 ## Verification
 

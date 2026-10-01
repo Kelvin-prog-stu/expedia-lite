@@ -40,6 +40,12 @@ from those four files, keeping their IDs. Every later start leaves the database
 alone, so your bookings survive restarts and the starter records are never
 duplicated. After seeding, the app reads and writes SQLite only.
 
+The database also holds two tables for hotels saved from the live API:
+`saved_hotels`, and `demo_hotel_nights` with a simulated classroom rate and room
+count per saved hotel per night. They are created on start if missing, never touch
+the supplied tables, and start empty. To check them on throwaway databases, from
+`backend/`: `.venv\Scripts\python.exe checks\check_schema.py`.
+
 To reset to the supplied data, stop the backend and delete
 `backend/expedia_lite.db`. The next start seeds it again. The database file is
 not committed.
@@ -142,12 +148,39 @@ other categories open Expedia in a new tab.
 | GET    | `/api/health`            | Liveness check, record counts, and key status  |
 | GET    | `/api/location?zip=`     | Resolve a five digit US ZIP code to a point    |
 | GET    | `/api/nearby-hotels?zip=`| Hotels within 5 km of that point, nearest first |
+| GET    | `/api/saved-hotels?zip=` | Hotels saved for a ZIP, with simulated nights. Empty is a success |
+| GET    | `/api/saved-hotels/status?place_id=` | Which provider ids are saved, from the database |
+| POST   | `/api/saved-hotels`      | Save an API hotel for a ZIP: 201 when new, 200 when already saved |
+| DELETE | `/api/saved-hotels?place_id=` | Remove a saved hotel, its ZIP links, and its nights together |
 | GET    | `/api/hotels?name=`      | Search hotels by name, with their stays        |
 | GET    | `/api/users`             | The demo travelers                             |
 | GET    | `/api/bookings?user_id=` | Booking history, optionally for one traveler   |
 | POST   | `/api/bookings`          | Create a booking from `user_id` and `trip_id`  |
 | PATCH  | `/api/bookings/{id}`     | Cancel a booking; the record is kept           |
 | DELETE | `/api/bookings/{id}`     | Delete a booking                               |
+
+### Saving hotels locally
+
+Beside each API result, **Add to Local** saves the hotel in SQLite, along with the
+ZIP search it came from and five simulated classroom nights (October 10 to 14, 2026,
+each $100.00 with 20 rooms). **Remove from Local** deletes the hotel, its ZIP links, and
+its nights together, in one transaction. Saving the same hotel again adds nothing and
+overwrites nothing, including a rate you have edited in the database.
+
+A ZIP lookup is **local first**: it asks the database for hotels saved for that ZIP,
+shows them as **Saved locally** if there are any, and only when the database answers
+with none does it ask the live service (**API results**). A storage error is shown as an
+error, never as "nothing saved". The saved view lists only what was saved, never every
+hotel in the area, so **Show live API results for this ZIP** is there to add more.
+
+The rates and rooms are simulated classroom data. The hotel API has no prices or
+availability. Edit them in a SQLite viewer (`demo_hotel_nights`), refresh, and the app
+shows your values.
+
+For tests that change data, `EXPEDIA_DB_PATH` points the backend at a throwaway database,
+and `BACKEND_URL` and `FRONTEND_PORT` start a second copy of the frontend against it.
+`backend/checks/check_saved_hotels.py` does this for you and never touches the real
+database.
 
 The location routes answer 400 for a ZIP that is not five digits, 404 for one the
 service cannot place, 429 when the service's request limit is reached, 502 when
