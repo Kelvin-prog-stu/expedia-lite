@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
 class Trip(BaseModel):
@@ -101,3 +101,84 @@ class NearbyHotelsResponse(BaseModel):
     omitted_count: int
     attribution: str | None = None
     hotels: list[NearbyHotel]
+
+
+class SavedNight(BaseModel):
+    """One night of simulated classroom data. Not supplied by the hotel API."""
+
+    stay_date: str
+    nightly_rate_cents: int
+    rooms_available: int
+
+
+class SavedHotelResult(BaseModel):
+    """A hotel saved from the live API, with its simulated nights."""
+
+    place_id: str
+    name: str | None = None
+    address: str | None = None
+    latitude: float
+    longitude: float
+    distance_m: int | None = None
+    nights: list[SavedNight]
+
+
+class SavedHotelsResponse(BaseModel):
+    """What is saved for one ZIP. Empty is a real answer, and never the whole area."""
+
+    zip_code: str
+    location: ZipLocation | None = None
+    radius_m: int | None = None
+    hotels: list[SavedHotelResult]
+
+
+class SaveSearch(BaseModel):
+    """The ZIP search a hotel is being saved from."""
+
+    zip_code: str = Field(pattern=r"^\d{5}$")
+    center_latitude: float = Field(ge=-90, le=90)
+    center_longitude: float = Field(ge=-180, le=180)
+    locality: str | None = None
+    country_code: str = Field(default="US", min_length=2, max_length=2)
+    radius_m: int = Field(gt=0)
+
+    @field_validator("locality")
+    @classmethod
+    def _blank_locality_is_missing(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+
+class SaveHotelRequest(BaseModel):
+    """An API hotel to save, plus the search it came from."""
+
+    place_id: str = Field(min_length=1)
+    name: str | None = None
+    address: str | None = None
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    distance_m: int | None = Field(default=None, ge=0)
+    search: SaveSearch
+
+    @field_validator("place_id")
+    @classmethod
+    def _id_is_not_blank(cls, value: str) -> str:
+        # Checked, never changed: a provider id is kept exactly as given.
+        if not value.strip():
+            raise ValueError("place_id must not be blank")
+        return value
+
+    @field_validator("name", "address")
+    @classmethod
+    def _blank_text_is_missing(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+
+class SaveHotelResponse(BaseModel):
+    """`created` is False when the hotel was already saved and nothing was overwritten."""
+
+    created: bool
+    hotel: SavedHotelResult
+
+
+class SavedStatusResponse(BaseModel):
+    saved_ids: list[str]

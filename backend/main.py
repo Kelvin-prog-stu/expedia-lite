@@ -4,10 +4,11 @@ Routes are thin: they validate input through schemas.py, call the database
 controller, and shape the response. All SQL lives in database_controller.py.
 """
 
+import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -20,6 +21,10 @@ from schemas import (
     BookingUpdate,
     HotelResult,
     NearbyHotelsResponse,
+    SaveHotelRequest,
+    SaveHotelResponse,
+    SavedHotelsResponse,
+    SavedStatusResponse,
     SearchResponse,
     User,
     ZipLocation,
@@ -70,6 +75,38 @@ async def find_nearby_hotels(zip: str = "") -> NearbyHotelsResponse:
     return NearbyHotelsResponse(**asdict(geo.hotels_near_zip(zip)))
 
 
+# Saved hotels. The live search above is unchanged; these read and write SQLite only.
+
+
+@app.get("/api/saved-hotels", response_model=SavedHotelsResponse)
+async def list_saved_hotels(zip: str = "") -> SavedHotelsResponse:
+    """Hotels saved for a ZIP. An empty list is a successful answer, not a failure."""
+    return SavedHotelsResponse(**db.list_saved_hotels(geo.validated_zip(zip)))
+
+
+@app.get("/api/saved-hotels/status", response_model=SavedStatusResponse)
+async def saved_status(place_id: list[str] = Query(default=[], max_length=200)) -> SavedStatusResponse:
+    """Which of these provider ids are saved. Asks the database, so it survives a refresh."""
+    return SavedStatusResponse(saved_ids=db.saved_hotel_ids(place_id))
+
+
+@app.post("/api/saved-hotels", response_model=SaveHotelResponse)
+async def save_hotel(payload: SaveHotelRequest, response: Response) -> SaveHotelResponse:
+    """Save an API hotel for a ZIP search. 201 when new, 200 when it was already saved."""
+    saved = db.save_hotel(
+        payload.model_dump(exclude={"search"}), payload.search.model_dump()
+    )
+    response.status_code = 201 if saved["created"] else 200
+    return SaveHotelResponse(**saved)
+
+
+@app.delete("/api/saved-hotels", status_code=204)
+async def remove_saved_hotel(place_id: str = Query(min_length=1)) -> Response:
+    """Remove a saved hotel with its ZIP links and nights, or change nothing."""
+    db.remove_saved_hotel(place_id)
+    return Response(status_code=204)
+
+
 @app.get("/api/hotels", response_model=SearchResponse)
 async def search_hotels(name: str = "") -> SearchResponse:
     """Search hotels by name and return each match with its offered stays."""
@@ -113,6 +150,21 @@ async def delete_booking(booking_id: str) -> Response:
 async def handle_not_found(request: Request, exc: db.RecordNotFoundError) -> JSONResponse:
     return JSONResponse(
         status_code=404, content={"error": {"code": "not_found", "message": str(exc)}}
+    )
+
+
+@app.exception_handler(sqlite3.Error)
+async def handle_storage_error(request: Request, exc: sqlite3.Error) -> JSONResponse:
+    # A storage failure is an error, never an empty result. The SQLite message can name
+    # tables and files, so only a fixed sentence goes back to the browser.
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "local_storage_error",
+                "message": "The local database could not be read or written. Nothing was changed.",
+            }
+        },
     )
 
 

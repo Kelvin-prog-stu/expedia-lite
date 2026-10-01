@@ -4,14 +4,16 @@ FastAPI routes call these functions and nothing else touches the database. This
 module imports nothing from FastAPI, so it can be exercised on its own.
 """
 
+import os
 import sqlite3
 from datetime import date
 from pathlib import Path
 
-from models import BOOKING_CANCELLED, BOOKING_CONFIRMED, SCHEMA
+from models import BOOKING_CANCELLED, BOOKING_CONFIRMED, DEMO_STAY_DATES, SCHEMA
 from seed import NEXT_BOOKING_KEY, seed_if_needed
 
-DB_PATH = Path(__file__).parent / "expedia_lite.db"
+# EXPEDIA_DB_PATH lets a test run against a throwaway database. Normally unset.
+DB_PATH = Path(os.environ.get("EXPEDIA_DB_PATH") or Path(__file__).parent / "expedia_lite.db")
 
 
 class RecordNotFoundError(Exception):
@@ -155,3 +157,160 @@ def record_counts() -> dict[str, int]:
             table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             for table in ("hotels", "trips", "users", "bookings")
         }
+
+
+# ---- Saved hotels (Assignment 2) --------------------------------------------------
+#
+# Hotels saved from the live API, the ZIP search each came from, and a simulated
+# classroom rate and room count for each night in DEMO_STAY_DATES. The rates and rooms
+# are never provider data. A save is idempotent: it adds only what is missing and never
+# overwrites anything already stored, including a rate someone has edited.
+#
+# `ON CONFLICT DO NOTHING` skips only a real duplicate. `INSERT OR IGNORE` would also
+# swallow a failed CHECK, such as a latitude out of range, and report it as saved.
+
+
+def _placeholders(values: list) -> str:
+    return ",".join("?" * len(values))
+
+
+def _hotels_with_nights(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict]:
+    """Saved-hotel rows plus each hotel's simulated nights, oldest date first."""
+    ids = [row["hotel_id"] for row in rows]
+    nights: dict[str, list[dict]] = {hotel_id: [] for hotel_id in ids}
+    if ids:
+        for night in conn.execute(
+            f"""SELECT hotel_id, stay_date, nightly_rate_cents, rooms_available
+                FROM demo_hotel_nights WHERE hotel_id IN ({_placeholders(ids)})
+                ORDER BY stay_date""",
+            ids,
+        ):
+            nights[night["hotel_id"]].append(
+                {
+                    "stay_date": night["stay_date"],
+                    "nightly_rate_cents": night["nightly_rate_cents"],
+                    "rooms_available": night["rooms_available"],
+                }
+            )
+
+    return [
+        {
+            "place_id": row["hotel_id"],
+            "name": row["name"],
+            "address": row["address"],
+            "latitude": row["latitude"],
+            "longitude": row["longitude"],
+            "distance_m": row["distance_m"],
+            "nights": nights[row["hotel_id"]],
+        }
+        for row in rows
+    ]
+
+
+_SAVED_FOR_ZIP = """
+    SELECT h.hotel_id, h.name, h.address, h.latitude, h.longitude,
+           z.zip_code, z.center_latitude, z.center_longitude, z.locality,
+           z.country_code, z.radius_m, z.distance_m
+    FROM saved_hotel_zips z
+    JOIN saved_hotels h ON h.hotel_id = z.hotel_id
+"""
+
+
+def _location_of(row: sqlite3.Row) -> dict:
+    return {
+        "postcode": row["zip_code"],
+        "country_code": row["country_code"],
+        "latitude": row["center_latitude"],
+        "longitude": row["center_longitude"],
+        "locality": row["locality"],
+    }
+
+
+def list_saved_hotels(zip_code: str) -> dict:
+    """Hotels saved for a ZIP, nearest first, with the stored search centre.
+
+    An empty `hotels` list means nothing is saved for this ZIP. It is a successful
+    answer; a storage failure raises instead.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            _SAVED_FOR_ZIP
+            + " WHERE z.zip_code = ? ORDER BY z.distance_m IS NULL, z.distance_m, h.hotel_id",
+            (zip_code,),
+        ).fetchall()
+        hotels = _hotels_with_nights(conn, rows)
+
+    return {
+        "zip_code": zip_code,
+        "location": _location_of(rows[0]) if rows else None,
+        "radius_m": rows[0]["radius_m"] if rows else None,
+        "hotels": hotels,
+    }
+
+
+def saved_hotel_ids(place_ids: list[str]) -> list[str]:
+    """Which of these provider ids are saved, according to the database."""
+    if not place_ids:
+        return []
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT hotel_id FROM saved_hotels WHERE hotel_id IN ({_placeholders(place_ids)})",
+            place_ids,
+        ).fetchall()
+    return [row["hotel_id"] for row in rows]
+
+
+def save_hotel(hotel: dict, search: dict) -> dict:
+    """Save an API hotel for a ZIP search, in one transaction. Safe to repeat.
+
+    Adds the hotel if it is new, links it to this search if that link is new, and adds
+    any missing simulated nights. Existing rows are left exactly as they are.
+    """
+    place_id = hotel["place_id"]
+    with get_connection() as conn:
+        created = (
+            conn.execute("SELECT 1 FROM saved_hotels WHERE hotel_id = ?", (place_id,)).fetchone()
+            is None
+        )
+        conn.execute(
+            """INSERT INTO saved_hotels (hotel_id, name, address, latitude, longitude)
+               VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""",
+            (place_id, hotel["name"], hotel["address"], hotel["latitude"], hotel["longitude"]),
+        )
+        conn.execute(
+            """INSERT INTO saved_hotel_zips
+                   (hotel_id, zip_code, center_latitude, center_longitude, locality,
+                    country_code, radius_m, distance_m)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""",
+            (
+                place_id,
+                search["zip_code"],
+                search["center_latitude"],
+                search["center_longitude"],
+                search["locality"],
+                search["country_code"],
+                search["radius_m"],
+                hotel["distance_m"],
+            ),
+        )
+        conn.executemany(
+            "INSERT INTO demo_hotel_nights (hotel_id, stay_date) VALUES (?, ?) ON CONFLICT DO NOTHING",
+            [(place_id, stay_date) for stay_date in DEMO_STAY_DATES],
+        )
+        rows = conn.execute(
+            _SAVED_FOR_ZIP + " WHERE h.hotel_id = ? AND z.zip_code = ?",
+            (place_id, search["zip_code"]),
+        ).fetchall()
+        saved = _hotels_with_nights(conn, rows)[0]
+
+    return {"created": created, "hotel": saved}
+
+
+def remove_saved_hotel(place_id: str) -> None:
+    """Remove a saved hotel, its ZIP links, and its nights together, or none of them."""
+    with get_connection() as conn:
+        _require(conn, "saved_hotels", "hotel_id", place_id, "saved hotel")
+        # Children first: the foreign keys refuse to delete a hotel that still has rows.
+        conn.execute("DELETE FROM demo_hotel_nights WHERE hotel_id = ?", (place_id,))
+        conn.execute("DELETE FROM saved_hotel_zips WHERE hotel_id = ?", (place_id,))
+        conn.execute("DELETE FROM saved_hotels WHERE hotel_id = ?", (place_id,))
