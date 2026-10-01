@@ -109,3 +109,46 @@ export function deleteBooking(bookingId) {
 export function findNearbyHotels(zipCode) {
   return request(`/nearby-hotels?${new URLSearchParams({ zip: zipCode })}`)
 }
+
+/**
+ * Hotels saved locally for a ZIP code, with their simulated nights. An empty `hotels`
+ * list means nothing is saved for that ZIP. It is a successful answer; a failure throws.
+ */
+export function listSavedHotels(zipCode) {
+  return request(`/saved-hotels?${new URLSearchParams({ zip: zipCode })}`)
+}
+
+/** Which of these provider ids are saved, decided by the database. Resolves to an array. */
+export async function findSavedIds(placeIds) {
+  if (placeIds.length === 0) return []
+  const query = new URLSearchParams()
+  placeIds.forEach((id) => query.append('place_id', id))
+  const body = await request(`/saved-hotels/status?${query}`)
+  return body.saved_ids
+}
+
+/**
+ * Save an API hotel for the ZIP search it came from. Resolves to { created, hotel };
+ * `created` is false when it was already saved and nothing was overwritten.
+ */
+export function saveHotel(hotel, search) {
+  return request('/saved-hotels', {
+    method: 'POST',
+    body: JSON.stringify({
+      place_id: hotel.place_id,
+      name: hotel.name,
+      address: hotel.address,
+      latitude: hotel.latitude,
+      longitude: hotel.longitude,
+      distance_m: hotel.distance_m,
+      search,
+    }),
+  })
+}
+
+/** Remove a saved hotel together with its ZIP links and nights. */
+export function removeSavedHotel(placeId) {
+  return request(`/saved-hotels?${new URLSearchParams({ place_id: placeId })}`, {
+    method: 'DELETE',
+  })
+}

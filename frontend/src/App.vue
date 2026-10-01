@@ -6,8 +6,12 @@ import {
   createBooking,
   deleteBooking,
   findNearbyHotels,
+  findSavedIds,
   listBookings,
+  listSavedHotels,
   listUsers,
+  removeSavedHotel,
+  saveHotel,
   searchHotels,
 } from '@/api'
 import BookingHistory from '@/components/BookingHistory.vue'
@@ -53,10 +57,18 @@ const zipProblem = ref(null)
 const zipValidationMessage = ref('')
 const isLookingUpZip = ref(false)
 
+// Provider ids the database says are saved, ids with a save or removal in flight, and the
+// last save, removal, or live-search message. Arrays, replaced rather than edited.
+const savedIds = ref([])
+const pendingIds = ref([])
+const savedFeedback = ref(null)
+const isShowingLive = ref(false)
+
 const PROBLEM_TITLES = {
   location_not_found: 'ZIP code not found',
   rate_limited: 'Too many requests',
   network: 'Backend not reachable',
+  local_storage_error: 'Saved hotels unavailable',
 }
 
 // The service answering "no such ZIP" is a different thing from the service failing,
@@ -160,12 +172,22 @@ async function onDelete(bookingId) {
   }
 }
 
+// What the live search returned, with which of those hotels the database says are saved.
+// Nothing is shown unless both succeed, so a failed status check is never read as "none saved".
+async function loadLiveResults(zipCode) {
+  const live = await findNearbyHotels(zipCode)
+  const saved = await findSavedIds(live.hotels.map((hotel) => hotel.place_id))
+  savedIds.value = saved
+  nearby.value = { ...live, source: 'api' }
+}
+
 async function onLookUpZip() {
   // Clear the earlier answer first, so a stale search is never read as the new one.
   nearby.value = null
   selectedPlaceId.value = ''
   zipProblem.value = null
   zipValidationMessage.value = ''
+  savedFeedback.value = null
 
   const zipCode = zipQuery.value.trim()
   if (!zipCode) {
@@ -179,12 +201,124 @@ async function onLookUpZip() {
 
   isLookingUpZip.value = true
   try {
-    nearby.value = await findNearbyHotels(zipCode)
+    // Local first. A failure here is an error and is shown as one: it never reads as
+    // "nothing saved" and never falls through to the live search.
+    const saved = await listSavedHotels(zipCode)
+    if (saved.hotels.length > 0) {
+      savedIds.value = saved.hotels.map((hotel) => hotel.place_id)
+      nearby.value = {
+        source: 'local',
+        location: saved.location,
+        radius_m: saved.radius_m,
+        limit: saved.hotels.length,
+        may_have_more: false,
+        omitted_count: 0,
+        attribution: null,
+        hotels: saved.hotels,
+      }
+    } else {
+      // The local request worked and found nothing: only now ask the live service.
+      await loadLiveResults(zipCode)
+    }
   } catch (error) {
     if (error.code === 'invalid_zip') zipValidationMessage.value = error.message
     else zipProblem.value = problemFrom(error)
   } finally {
     isLookingUpZip.value = false
+  }
+}
+
+// The way from saved results to the live ones, for adding more hotels to a ZIP that
+// already has some saved. The lookup itself stays local first.
+async function onShowLive() {
+  const zipCode = nearby.value.location.postcode
+  isShowingLive.value = true
+  savedFeedback.value = null
+  try {
+    await loadLiveResults(zipCode)
+    selectedPlaceId.value = ''
+  } catch (error) {
+    // The saved results stay on screen; only the message says the live search failed.
+    savedFeedback.value = { kind: 'error', text: `Could not load live results. ${error.message}` }
+  } finally {
+    isShowingLive.value = false
+  }
+}
+
+function withoutId(ids, placeId) {
+  return ids.filter((id) => id !== placeId)
+}
+
+function nightRange(nights) {
+  const format = (isoDate) => {
+    const [year, month, day] = isoDate.split('-').map(Number)
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+  return `${format(nights[0].stay_date)} to ${format(nights[nights.length - 1].stay_date)}`
+}
+
+async function onAddHotel(hotel) {
+  const placeId = hotel.place_id
+  if (pendingIds.value.includes(placeId) || savedIds.value.includes(placeId)) return
+
+  const { location, radius_m: radiusM } = nearby.value
+  const label = hotel.name || 'This hotel'
+  pendingIds.value = [...pendingIds.value, placeId]
+  savedFeedback.value = null
+  try {
+    const { created, hotel: saved } = await saveHotel(hotel, {
+      zip_code: location.postcode,
+      center_latitude: location.latitude,
+      center_longitude: location.longitude,
+      locality: location.locality,
+      country_code: location.country_code,
+      radius_m: radiusM,
+    })
+    // Marked saved only now, after the database confirmed it.
+    savedIds.value = [...savedIds.value, placeId]
+    savedFeedback.value = {
+      kind: 'success',
+      text: created
+        ? `${label} was saved locally for ZIP ${location.postcode}, with ${saved.nights.length} simulated nights (${nightRange(saved.nights)}).`
+        : `${label} was already saved. It is now linked to ZIP ${location.postcode} too; nothing was overwritten.`,
+    }
+  } catch (error) {
+    savedFeedback.value = { kind: 'error', text: `${label} was not saved. ${error.message}` }
+  } finally {
+    pendingIds.value = withoutId(pendingIds.value, placeId)
+  }
+}
+
+async function onRemoveHotel(hotel) {
+  const placeId = hotel.place_id
+  if (pendingIds.value.includes(placeId) || !savedIds.value.includes(placeId)) return
+
+  const label = hotel.name || 'This hotel'
+  pendingIds.value = [...pendingIds.value, placeId]
+  savedFeedback.value = null
+  try {
+    await removeSavedHotel(placeId)
+    // The interface changes only now, after the database confirmed the removal.
+    savedIds.value = withoutId(savedIds.value, placeId)
+    if (nearby.value.source === 'local') {
+      nearby.value = {
+        ...nearby.value,
+        hotels: nearby.value.hotels.filter((item) => item.place_id !== placeId),
+      }
+    }
+    if (selectedPlaceId.value === placeId) selectedPlaceId.value = ''
+    savedFeedback.value = {
+      kind: 'success',
+      text: `${label} was removed from local storage, together with its ZIP links and simulated nights.`,
+    }
+  } catch (error) {
+    savedFeedback.value = { kind: 'error', text: `${label} was not removed. ${error.message}` }
+  } finally {
+    pendingIds.value = withoutId(pendingIds.value, placeId)
   }
 }
 
@@ -329,7 +463,14 @@ onMounted(async () => {
           :nearby="nearby"
           :is-loading="isLookingUpZip"
           :selected-id="selectedPlaceId"
+          :saved-ids="savedIds"
+          :pending-ids="pendingIds"
+          :feedback="savedFeedback"
+          :is-showing-live="isShowingLive"
           @select="onSelectHotel"
+          @add="onAddHotel"
+          @remove="onRemoveHotel"
+          @show-live="onShowLive"
         />
       </div>
 
