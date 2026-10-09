@@ -101,3 +101,19 @@ You answer a traveler's question about saved hotels using ONLY the records given
 5. **Early mockup.** The mockup was drawn after the backend design and before the panel.
    The built panel adds example question buttons and a visible model name; those are listed
    in the report's revisions, and the mockup was not edited to match.
+
+## In-class activity, folded in (2026-10-08)
+
+The in-class "RAG Context for Expedia Replica Lite" activity was pasted with its five
+instructor recordings attached, and I answered "Add the in-class pieces now, on Gemini"
+(it was background for tonight's assignment). The agent worked from the written steps and
+did not watch the recordings. It added `prompts/hotel-assistant.md`, `chat_messages`, the
+history route, follow-up context, and `docs/rag-context.md`.
+
+6. **Cost columns without `_cents`.** The first live run with history saved aliased a cents
+   total to `total_cost`, which made the grounding check flag a correct $200.00, and for ZIP and
+   single night questions it returned only names, so the answer said it had no costs. The
+   prompt file now requires the rate and rooms (or the total and minimum rooms) and a `_cents`
+   suffix on money columns, and a no-match answer says what is saved. Before:
+   [live-run-2026-10-08-history-first-prompt.json](../docs/evidence/live-run-2026-10-08-history-first-prompt.json);
+   after: [live-run-2026-10-08-with-history.json](../docs/evidence/live-run-2026-10-08-with-history.json).

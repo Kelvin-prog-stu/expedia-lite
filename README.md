@@ -152,7 +152,8 @@ other categories open Expedia in a new tab.
 | GET    | `/api/saved-hotels/status?place_id=` | Which provider ids are saved, from the database |
 | POST   | `/api/saved-hotels`      | Save an API hotel for a ZIP: 201 when new, 200 when already saved |
 | DELETE | `/api/saved-hotels?place_id=` | Remove a saved hotel, its ZIP links, and its nights together |
-| POST   | `/api/chat`              | Ask a question about the saved hotels (Gemini). Read only |
+| POST   | `/api/chat`              | Ask a question about the saved hotels (Gemini). Read only. Optional `conversation_id` continues a conversation |
+| GET    | `/api/chat/history?conversation_id=` | A saved conversation, oldest question first; with no id, the most recent |
 | GET    | `/api/hotels?name=`      | Search hotels by name, with their stays        |
 | GET    | `/api/users`             | The demo travelers                             |
 | GET    | `/api/bookings?user_id=` | Booking history, optionally for one traveler   |
@@ -178,6 +179,14 @@ the whole job, and the browser never sees the model key:
 A stay from check-in D to check-out E uses the nights from D up to, but not including, E.
 A hotel is available only if every night has a record with a room free. A missing night is
 not available. Rates and rooms are simulated classroom data.
+
+The model's instructions (purpose, columns, both JOINs, stay rules, answer rules) live in
+`prompts/hotel-assistant.md`. The backend reads that file once when it starts, so **restart
+the backend after editing it**. Every step of a question is saved in the `chat_messages` table
+(question, proposed SQL, executed SQL, retrieval result, notes, answer or error) with the
+conversation id, timestamp, role, and the prompt's version. The panel shows the conversation
+again after a refresh, and a follow-up such as "What about October 12?" is understood from the
+earlier questions. The model's queries cannot read or change that table.
 
 Add a Gemini key to the same `.env` (get one at https://aistudio.google.com/apikey), then
 restart the backend:

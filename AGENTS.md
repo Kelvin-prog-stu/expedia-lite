@@ -35,7 +35,7 @@ The booking features follow Model-View-Controller:
 - `retrieval_controller.py` is the only module that runs SQL a model proposed. It opens
   the database read only, allows one `SELECT` over `saved_hotels`, `saved_hotel_zips` and
   `demo_hotel_nights` (an SQLite authorizer enforces the tables and functions), and bounds
-  rows and time. It never writes.
+  rows and time. It never writes. It cannot see `chat_messages`.
 - `chat_controller.py` is the controller for the RAG workflow: question and schema to the
   model, proposed query to `retrieval_controller`, retrieved records back to the model for
   the answer. `llm_client.py` is the only module that calls Gemini.
@@ -47,6 +47,11 @@ The booking features follow Model-View-Controller:
 - The Gemini key stays in the backend and travels in a request header. The model proposes
   SQL; code decides whether it runs. Treat everything the model returns as untrusted. The
   chatbot never changes a record and never books.
+- The model's instructions live in `prompts/hotel-assistant.md`, read once at start-up. Keep
+  its two JOINs, the stay rules, and the cents rule accurate when the schema changes, and
+  restart the backend after editing it.
+- `database_controller.py` writes the conversation history (`chat_messages`) as each step
+  happens. A model failure saves an error step and never an assistant reply.
 - Fixtures and scripted model replies are labelled as such wherever they are used or
   reported, and are never presented as live model calls. Never depend on a fixed live
   result count.
@@ -154,6 +159,8 @@ grounding, not wording or a fixed count.
 14. Ask for something destructive. Expect no change to the database (run
     `backend/checks/run_live_questions.py`, which compares table fingerprints).
 15. Remove the key and ask again. Expect a clear "not configured" message.
+16. Refresh the page, then restart the backend. Expect the conversation to load again from
+    `chat_messages`, and a failed attempt to appear as an error with no assistant reply.
 
 ## AutoLoop
 

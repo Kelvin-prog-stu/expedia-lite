@@ -223,3 +223,18 @@ question ──> chat_controller ──(question + schema + stay rules)──> G
   missing night is never treated as available.
 - **Grounding check:** any `$` amount in the answer that is not in the retrieved records
   (cents divided by 100) is flagged in the notes.
+
+### Prompt file and saved conversations
+
+- **Prompt file:** `prompts/hotel-assistant.md` holds the purpose, the columns, the two JOINs, the
+  stay rules, and the answer rules, as three headed sections. `chat_controller` reads it once at
+  start-up (so a missing section stops the backend with a clear message) and saves the first 12
+  characters of its SHA-256 with every message.
+- **History:** `chat_messages` has one row per step: `question`, `proposed_sql`, `executed_sql`,
+  `retrieval_result`, `notes`, `answer`, `error`. Roles are `user`, `assistant`, and `tool`;
+  FastAPI and SQLite are processing steps, not roles. It is written through
+  `database_controller` and is outside the three tables the model may read.
+- **Follow-ups:** the first request gets the last three exchanges of the same conversation (the
+  question, the query that ran, and the answer), so "What about October 12?" can be completed.
+- **Reading it back:** `GET /api/chat/history` rebuilds each question with its status, query,
+  records, and answer from the saved steps.

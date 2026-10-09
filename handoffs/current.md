@@ -31,7 +31,7 @@ fixture results.
 
 | Check | Result |
 | --- | --- |
-| `backend/checks/check_chat.py` (fixtures, scripted model) | 85 of 85 |
+| `backend/checks/check_chat.py` (fixtures, scripted model) | 113 of 113 |
 | `check_geo.py`, `check_schema.py`, `check_saved_hotels.py` | 24, 32, 36 pass |
 | `npm run build` | clean |
 | `backend/checks/run_live_questions.py` (live Gemini, real database) | 6 of 6 as expected on 2026-10-08, tables unchanged |
