@@ -16,6 +16,7 @@ import {
 } from '@/api'
 import BookingHistory from '@/components/BookingHistory.vue'
 import DateRangePicker from '@/components/DateRangePicker.vue'
+import ChatPanel from '@/components/ChatPanel.vue'
 import NearbyHotels from '@/components/NearbyHotels.vue'
 import SearchResults from '@/components/SearchResults.vue'
 import TravelIcon from '@/components/TravelIcon.vue'
@@ -354,6 +355,7 @@ onMounted(async () => {
       <nav class="topnav" aria-label="Main">
         <a href="#search">Find a stay</a>
         <a href="#zip-search">Hotels by ZIP</a>
+        <a href="#ask">Ask the chatbot</a>
         <a href="#bookings">My bookings</a>
         <a href="https://www.expedia.com/" target="_blank" rel="noopener noreferrer">
           Explore Expedia <TravelIcon name="external" :size="13" />
@@ -473,6 +475,8 @@ onMounted(async () => {
           @show-live="onShowLive"
         />
       </div>
+
+      <ChatPanel />
 
       <SearchResults
         v-if="results"

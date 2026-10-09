@@ -152,3 +152,14 @@ export function removeSavedHotel(placeId) {
     method: 'DELETE',
   })
 }
+
+/**
+ * Ask the hotel chatbot a question about the saved hotels.
+ *
+ * Resolves to the whole chain: the proposed SQL, the retrieved records, and the answer.
+ * `status` says what kind of outcome it is: answered, no_match, insufficient_data,
+ * rejected, or query_failed. The model runs on the backend; nothing here knows its key.
+ */
+export function askChatbot(question) {
+  return request('/chat', { method: 'POST', body: JSON.stringify({ question }) })
+}
