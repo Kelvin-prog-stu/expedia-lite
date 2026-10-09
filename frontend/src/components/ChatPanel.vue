@@ -185,7 +185,7 @@ async function onAsk() {
             </thead>
             <tbody>
               <tr v-for="(row, index) in result.rows" :key="index">
-                <td v-for="(value, position) in row" :key="position">
+                <td v-for="(value, position) in row" :key="position" :title="cell(result.columns[position], value)">
                   {{ cell(result.columns[position], value) }}
                 </td>
               </tr>
@@ -502,6 +502,9 @@ td {
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 thead th {
