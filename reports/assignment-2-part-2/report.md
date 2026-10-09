@@ -3,12 +3,12 @@
 ## Project access
 
 - Repository: https://github.com/Kelvin-prog-stu/expedia-lite (public)
-- Assessed commit: `{SHA}` on `main`. It is the merge of `feature/rag-chatbot`, which
-  carries the Oct 1 local storage work and the chatbot, and includes the demo video.
+- Assessed commit: `{SHA}` on `main`. It contains the Oct 1 local storage work and
+  the chatbot (built on `feature/rag-chatbot`, merged into `main`) and includes the demo video.
   This report was added in the commit after it and changes no code.
 - Earlier work is still in the history: Assignment 1 Part 1 (`6f4b9f0`) and Assignment 2
   Part 1 (`bdf520f`) are both ancestors of `main`.
-- Review: before each commit the agent read the diff with `git diff`. [CONFIRM]
+- Review: before each commit the agent read the diff with `git diff`.
 
 Every file below is linked at the assessed commit, so the links keep working as the
 project changes.
@@ -94,7 +94,31 @@ already lists saved hotels.
 
 ## Demo video
 
-{VIDEO}
+[a2-part2-demo.mp4]({B}/docs/demo/a2-part2-demo.mp4) (5 minutes 6 seconds, no audio, 16.8 MB).
+On GitHub, open it to play it in the page, or choose Download. Times below are approximate.
+I recorded it myself on 2026-10-08 against the running app with a real Gemini key.
+
+| About | What the video shows |
+| --- | --- |
+| 0:00 | VS Code. The terminal still holds an earlier check run ("85 of 85"); that is old output, not the final run. The frontend is started with `npm run dev` |
+| 0:20 | The browser opens before the dev server is ready ("This site can't be reached"), then loads |
+| 0:30 | The local storage foundation: ZIP `16802` resolves to State College and lists the hotels saved locally with their simulated nights, on the map |
+| 0:40 | **Live question 1**: "Which saved hotel is cheapest for October 11 to October 13, 2026?" The loading state, then the answer (Nittany Lion Inn, $200.00), with the proposed SQL and the retrieved records |
+| 1:05 | **Live question 2**: "Show the three cheapest saved hotels near ZIP 16802 [...] night of October 11, 2026": both JOINs in the SQL, two rows, answer |
+| 1:30 | **Follow-up** "What about October 12?" typed and sent: loading, then the October 12 query and records and an answer ($100.00 and $175.50) |
+| 2:10 | The page is reloaded and the conversation is still there; then "Start a new conversation" clears the view |
+| 2:25 | The ZIP 16802 question typed again in the new conversation; the answer and records come back at about 3:10 |
+| 3:40 | **"What will the weather be in State College next week?"** The "Not in the saved data" state, with no query |
+| 4:05 | DB Browser for SQLite opens `expedia_lite.db`. The `chat_messages` table (140 rows at that point) shows each conversation's saved steps in order: `question`, `proposed_sql`, `executed_sql`, `retrieval_result`, `answer` |
+| 4:35 | VS Code: `check_chat.py` runs and ends at "113 of 113 fixture checks passed" (about 4:50) |
+| 4:55 | The backend is stopped (Ctrl+C: "Shutting down"). The page then shows "Conversation history unavailable. The app could not get an answer from its backend" |
+
+What the video does not show, and where it is covered instead: a no-match result (ZIP 16803 and
+March 2027) and the model declining "delete all saved hotels" are in the live trace in the
+verification record below. The refusal of disallowed SQL is in the fixture checks, whose 113
+results scroll past in the terminal and are listed in the verification record. The failure at the
+end is the panel's history-load message with the backend stopped, not a question asked while it was
+down; the "model service failed" and "rate limit" states are shown only in the fixture screenshots.
 
 ## Verification record
 
