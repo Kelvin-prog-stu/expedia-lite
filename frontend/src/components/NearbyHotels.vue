@@ -8,10 +8,16 @@ const props = defineProps({
   nearby: { type: Object, default: null },
   isLoading: { type: Boolean, default: false },
   selectedId: { type: String, default: '' },
+  savedIds: { type: Array, default: () => [] },
+  pendingIds: { type: Array, default: () => [] },
+  // { kind: 'success' | 'error', text } for the last save, removal, or live search.
+  feedback: { type: Object, default: null },
+  isShowingLive: { type: Boolean, default: false },
 })
 
-defineEmits(['select'])
+defineEmits(['select', 'add', 'remove', 'show-live'])
 
+const isLocal = computed(() => props.nearby?.source === 'local')
 const radiusKm = computed(() => (props.nearby ? props.nearby.radius_m / 1000 : 0))
 
 const place = computed(() => {
@@ -22,7 +28,8 @@ const place = computed(() => {
 
 const heading = computed(() => {
   if (props.isLoading) return 'Finding hotels...'
-  return props.nearby ? `Hotels near ${place.value}` : ''
+  if (!props.nearby) return ''
+  return isLocal.value ? `Saved hotels near ${place.value}` : `Hotels near ${place.value}`
 })
 
 const centreText = computed(() => {
@@ -42,7 +49,17 @@ const count = computed(() => props.nearby?.hotels.length ?? 0)
     aria-labelledby="nearby-title"
     :aria-busy="isLoading"
   >
-    <p class="eyebrow">Nearby hotels</p>
+    <p class="eyebrow">
+      Nearby hotels
+      <span
+        v-if="nearby && !isLoading"
+        class="source"
+        :class="isLocal ? 'local' : 'api'"
+        data-testid="source-label"
+      >
+        {{ isLocal ? 'Saved locally' : 'API results' }}
+      </span>
+    </p>
     <h2 id="nearby-title">{{ heading }}</h2>
 
     <div v-if="isLoading" class="layout" aria-hidden="true">
@@ -54,7 +71,15 @@ const count = computed(() => props.nearby?.hotels.length ?? 0)
 
     <template v-else>
       <p class="summary" role="status">
-        <template v-if="count > 0">
+        <template v-if="isLocal">
+          <template v-if="count > 0">
+            {{ count }} {{ count === 1 ? 'hotel' : 'hotels' }} saved for {{ place }} (centre
+            {{ centreText }}, {{ radiusKm }} km search).
+            <strong>These are only the hotels saved for this ZIP, not every hotel in the area.</strong>
+          </template>
+          <template v-else>No saved hotels remain for {{ place }}.</template>
+        </template>
+        <template v-else-if="count > 0">
           {{ count }} {{ count === 1 ? 'hotel' : 'hotels' }} within {{ radiusKm }} km of
           {{ place }} (centre {{ centreText }}), nearest first.
           <strong v-if="nearby.may_have_more">
@@ -62,6 +87,21 @@ const count = computed(() => props.nearby?.hotels.length ?? 0)
           </strong>
         </template>
         <template v-else>No hotels found within {{ radiusKm }} km of {{ place }}.</template>
+      </p>
+
+      <p v-if="isLocal" class="live-row">
+        <button type="button" class="live-button" :disabled="isShowingLive" @click="$emit('show-live')">
+          {{ isShowingLive ? 'Loading live results...' : 'Show live API results for this ZIP' }}
+        </button>
+      </p>
+
+      <p
+        v-if="feedback"
+        class="feedback"
+        :class="feedback.kind"
+        :role="feedback.kind === 'error' ? 'alert' : 'status'"
+      >
+        {{ feedback.text }}
       </p>
 
       <p v-if="nearby.omitted_count > 0" class="note">
@@ -76,8 +116,15 @@ const count = computed(() => props.nearby?.hotels.length ?? 0)
             v-if="count > 0"
             :hotels="nearby.hotels"
             :selected-id="selectedId"
+            :saved-ids="savedIds"
+            :pending-ids="pendingIds"
             @select="$emit('select', $event)"
+            @add="$emit('add', $event)"
+            @remove="$emit('remove', $event)"
           />
+          <p v-else-if="isLocal" class="empty">
+            Nothing is saved for this ZIP now. Search the ZIP again to see live API results.
+          </p>
           <p v-else class="empty">
             The location service lists no hotels within {{ radiusKm }} km of this point. That does
             not prove there are none. Try another ZIP code.
@@ -96,9 +143,16 @@ const count = computed(() => props.nearby?.hotels.length ?? 0)
       </div>
 
       <p class="fine-print">
-        These are places the location service lists as hotels: names, addresses, and coordinates
-        only. It has no prices, ratings, or availability, and a page of {{ nearby.limit }} is not a
-        complete list of hotels.
+        <template v-if="isLocal">
+          Saved locally: places you saved from the location service, with simulated classroom
+          rates and rooms. The rates and rooms are not from the hotel API, which has no prices or
+          availability.
+        </template>
+        <template v-else>
+          These are places the location service lists as hotels: names, addresses, and coordinates
+          only. It has no prices, ratings, or availability, and a page of {{ nearby.limit }} is not
+          a complete list of hotels.
+        </template>
         <span class="credit">
           Powered by <a href="https://www.geoapify.com/" target="_blank" rel="noopener noreferrer">Geoapify</a><template v-if="nearby.attribution">. Hotel data {{ nearby.attribution }}</template>.
         </span>
@@ -109,12 +163,34 @@ const count = computed(() => props.nearby?.hotels.length ?? 0)
 
 <style scoped>
 .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   margin: 0;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.source {
+  padding: 0.15rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  /* The heading above is uppercase; these two labels are meant to read as written. */
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.source.local {
+  background: #e3f4ea;
+  color: #155e34;
+}
+
+.source.api {
+  background: #e4edfc;
+  color: #1550a8;
 }
 
 h2 {
@@ -135,9 +211,60 @@ h2 {
   font-size: 0.9rem;
 }
 
+.live-row {
+  margin: 0 0 0.6rem;
+}
+
+.live-button {
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--brand);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.live-button:hover:not(:disabled) {
+  background: var(--brand);
+  color: #fff;
+}
+
+.live-button:disabled {
+  border-color: var(--line-strong);
+  color: var(--muted);
+  cursor: progress;
+}
+
+.live-button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.feedback {
+  margin: 0 0 0.7rem;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.feedback.success {
+  border-left: 4px solid #1d8a4c;
+  background: #e3f4ea;
+  color: #155e34;
+}
+
+.feedback.error {
+  border-left: 4px solid #b3261e;
+  background: #fbeceb;
+  color: #8a1f18;
+}
+
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
   gap: 1.25rem;
   margin-top: 0.8rem;
 }

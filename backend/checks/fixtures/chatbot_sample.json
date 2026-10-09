@@ -1,0 +1,225 @@
+{
+  "_label": "FIXTURE. A fixed, hand-written sample for repeatable checks. Not live data, and not from any model or hotel API. The hotels, ZIP codes, nightly rates, room counts, and the 'model' replies below are all invented so that every check has one known right answer. Run checks/check_chat.py to use it.",
+  "hotels": [
+    {
+      "place_id": "fixture-harbor",
+      "name": "Harbor Test Inn",
+      "address": "1 Fixture Way, Testville",
+      "latitude": 40.8,
+      "longitude": -77.86,
+      "distance_m": 400,
+      "zip_code": "16802",
+      "locality": "Testville",
+      "center_latitude": 40.803,
+      "center_longitude": -77.861,
+      "nights": [
+        [
+          "2026-10-10",
+          10000,
+          20
+        ],
+        [
+          "2026-10-11",
+          11000,
+          20
+        ],
+        [
+          "2026-10-12",
+          12000,
+          20
+        ],
+        [
+          "2026-10-13",
+          13000,
+          20
+        ],
+        [
+          "2026-10-14",
+          14000,
+          20
+        ]
+      ]
+    },
+    {
+      "place_id": "fixture-quiet",
+      "name": "Quiet Test Lodge",
+      "address": "2 Fixture Way, Testville",
+      "latitude": 40.81,
+      "longitude": -77.87,
+      "distance_m": 900,
+      "zip_code": "16802",
+      "locality": "Testville",
+      "center_latitude": 40.803,
+      "center_longitude": -77.861,
+      "nights": [
+        [
+          "2026-10-10",
+          9000,
+          5
+        ],
+        [
+          "2026-10-11",
+          9000,
+          5
+        ],
+        [
+          "2026-10-12",
+          9000,
+          5
+        ],
+        [
+          "2026-10-13",
+          9000,
+          5
+        ]
+      ]
+    },
+    {
+      "place_id": "fixture-nameless",
+      "name": null,
+      "address": null,
+      "latitude": 40.79,
+      "longitude": -77.85,
+      "distance_m": 1500,
+      "zip_code": "16802",
+      "locality": "Testville",
+      "center_latitude": 40.803,
+      "center_longitude": -77.861,
+      "nights": [
+        [
+          "2026-10-10",
+          8000,
+          3
+        ],
+        [
+          "2026-10-11",
+          8000,
+          3
+        ],
+        [
+          "2026-10-12",
+          8000,
+          0
+        ],
+        [
+          "2026-10-13",
+          8000,
+          3
+        ],
+        [
+          "2026-10-14",
+          8000,
+          3
+        ]
+      ]
+    },
+    {
+      "place_id": "fixture-far",
+      "name": "Far Test Suites",
+      "address": "9 Fixture Way, Elsewhere",
+      "latitude": 40.75,
+      "longitude": -73.99,
+      "distance_m": 700,
+      "zip_code": "10001",
+      "locality": "Elsewhere",
+      "center_latitude": 40.748,
+      "center_longitude": -73.994,
+      "nights": [
+        [
+          "2026-10-10",
+          15000,
+          10
+        ],
+        [
+          "2026-10-11",
+          15000,
+          10
+        ],
+        [
+          "2026-10-12",
+          15000,
+          10
+        ],
+        [
+          "2026-10-13",
+          15000,
+          10
+        ],
+        [
+          "2026-10-14",
+          15000,
+          10
+        ]
+      ]
+    }
+  ],
+  "_expected": "Stay 2026-10-11 to 2026-10-13 (2 nights: the 11th and 12th). Harbor 23000, Quiet 18000, Far 30000. Nameless is unavailable: 0 rooms on the 12th. Cheapest available: Quiet Test Lodge at $180.00. Stay 2026-10-12 to 2026-10-15 (3 nights): Quiet is unavailable, it has no row for the 14th. Nameless is unavailable (0 rooms on the 12th). Harbor 39000, Far 45000. Cheapest: Harbor Test Inn at $390.00.",
+  "scenarios": {
+    "cheapest_two_nights": {
+      "question": "Which saved hotel is cheapest for two nights from October 11 to October 13, 2026?",
+      "proposal": {
+        "sql": "SELECT h.hotel_id, COALESCE(h.name, '(name not provided)') AS name, COUNT(*) AS nights_found, MIN(n.rooms_available) AS min_rooms, SUM(n.nightly_rate_cents) AS total_cents FROM saved_hotels h JOIN demo_hotel_nights n ON n.hotel_id = h.hotel_id WHERE n.stay_date >= '2026-10-11' AND n.stay_date < '2026-10-13' GROUP BY h.hotel_id HAVING COUNT(*) = 2 AND MIN(n.rooms_available) >= 1 ORDER BY total_cents LIMIT 50",
+        "reason": "Hotels with a room free on both nights, cheapest total first."
+      },
+      "answer": "Quiet Test Lodge is the cheapest for October 11 to 13, 2026: $180.00 for 2 nights with at least 5 rooms free each night. Harbor Test Inn is $230.00 and Far Test Suites is $300.00. These rates and rooms are simulated classroom data."
+    },
+    "three_nights_missing_night": {
+      "question": "Cheapest hotel for October 12 to October 15, 2026?",
+      "proposal": {
+        "sql": "SELECT h.hotel_id, COALESCE(h.name, '(name not provided)') AS name, COUNT(*) AS nights_found, MIN(n.rooms_available) AS min_rooms, SUM(n.nightly_rate_cents) AS total_cents FROM saved_hotels h JOIN demo_hotel_nights n ON n.hotel_id = h.hotel_id WHERE n.stay_date >= '2026-10-12' AND n.stay_date < '2026-10-15' GROUP BY h.hotel_id HAVING COUNT(*) = 3 AND MIN(n.rooms_available) >= 1 ORDER BY total_cents LIMIT 50",
+        "reason": "Hotels with a room on all three nights."
+      },
+      "answer": "Harbor Test Inn is the cheapest: $390.00 for the 12th, 13th and 14th. Far Test Suites is $450.00. Simulated classroom data."
+    },
+    "checkout_excluded": {
+      "question": "What does Harbor Test Inn cost for one night, checking in October 13 and out October 14, 2026?",
+      "proposal": {
+        "sql": "SELECT h.hotel_id, h.name, n.stay_date, n.nightly_rate_cents, n.rooms_available FROM saved_hotels h JOIN demo_hotel_nights n ON n.hotel_id = h.hotel_id WHERE h.name = 'Harbor Test Inn' AND n.stay_date >= '2026-10-13' AND n.stay_date < '2026-10-14'",
+        "reason": "The one night of the stay. The check-out date is not a night."
+      },
+      "answer": "One night at Harbor Test Inn on October 13, 2026 is $130.00, with 20 rooms available. Simulated classroom data."
+    },
+    "no_match_outside_dates": {
+      "question": "Which hotel is cheapest from October 20 to October 22, 2026?",
+      "proposal": {
+        "sql": "SELECT h.hotel_id, h.name, SUM(n.nightly_rate_cents) AS total_cents FROM saved_hotels h JOIN demo_hotel_nights n ON n.hotel_id = h.hotel_id WHERE n.stay_date >= '2026-10-20' AND n.stay_date < '2026-10-22' GROUP BY h.hotel_id ORDER BY total_cents LIMIT 50",
+        "reason": "Hotels with nights on the 20th and 21st."
+      }
+    },
+    "insufficient_not_about_hotels": {
+      "question": "What will the weather be in State College next week?",
+      "proposal": {
+        "sql": null,
+        "reason": "Weather is not stored with the saved hotels."
+      }
+    },
+    "wrong_answer_amount": {
+      "question": "Which saved hotel is cheapest for two nights from October 11 to October 13, 2026?",
+      "answer": "Quiet Test Lodge is cheapest at $250.00 for the two nights."
+    }
+  },
+  "disallowed_proposals": {
+    "delete": "DELETE FROM saved_hotels",
+    "update": "UPDATE demo_hotel_nights SET nightly_rate_cents = 1",
+    "insert": "INSERT INTO saved_hotels (hotel_id, name, address, latitude, longitude) VALUES ('x', 'y', 'z', 1, 1)",
+    "replace": "REPLACE INTO saved_hotels (hotel_id, name, address, latitude, longitude) VALUES ('x', 'y', 'z', 1, 1)",
+    "drop": "DROP TABLE saved_hotels",
+    "alter": "ALTER TABLE saved_hotels ADD COLUMN evil TEXT",
+    "create": "CREATE TABLE evil (a TEXT)",
+    "pragma": "PRAGMA writable_schema = ON",
+    "attach": "ATTACH DATABASE 'other.db' AS other",
+    "two statements": "SELECT 1; DELETE FROM saved_hotels",
+    "trailing statement": "SELECT * FROM saved_hotels; UPDATE saved_hotels SET name = 'x'",
+    "comment": "SELECT * FROM saved_hotels -- and then more",
+    "block comment": "SELECT /* hide */ * FROM saved_hotels",
+    "cte that deletes": "WITH x AS (SELECT 1) DELETE FROM saved_hotels",
+    "cte that updates": "WITH x AS (SELECT 1) UPDATE saved_hotels SET name = 'x'",
+    "other table: bookings": "SELECT * FROM bookings",
+    "other table: users": "SELECT * FROM users",
+    "other table: hotels": "SELECT * FROM hotels",
+    "other table: app_meta": "SELECT * FROM app_meta",
+    "catalogue": "SELECT name, sql FROM sqlite_master",
+    "load extension": "SELECT load_extension('evil.dll')",
+    "recursive": "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r) SELECT n FROM r"
+  }
+}

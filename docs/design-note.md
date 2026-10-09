@@ -184,3 +184,42 @@ rate the provider does not have:
 | The provider failed or timed out | 502 | "Could not load hotels" |
 | No key configured | 503 | The message says to add the key |
 | The backend is down | proxy 500 or no answer | "Backend not reachable" |
+
+## Chatbot: retrieval, then an answer (Assignment 2, Part 2)
+
+```
+question ──> chat_controller ──(question + schema + stay rules)──> Gemini  (request 1)
+                  │                                                  │ proposes {sql, reason}
+                  │<─────────────────────────────────────────────────┘
+                  ├──(proposed sql)──> retrieval_controller
+                  │                      read-only connection, one SELECT, three tables,
+                  │                      allowed functions, 50 rows, 3 second limit
+                  │<──(columns, rows) or a refusal / failure
+                  └──(question + sql + rows)──> Gemini  (request 2) ──> answer
+```
+
+- **Model:** the three tables the chatbot may read are the ones from the local storage
+  work: `saved_hotels`, `saved_hotel_zips`, `demo_hotel_nights`. Nothing in the chatbot
+  changes them.
+- **Controllers:** `chat_controller.ask` runs the workflow and returns one `ChatResult`;
+  `retrieval_controller.run_query` is the only place model-written SQL is executed;
+  `llm_client.generate` is the only place Gemini is called. None imports FastAPI.
+- **Route:** `POST /api/chat` takes `{question}` and returns the status, the proposed query,
+  the columns and rows, the answer, any notes, and the model name. It is a plain `def` so
+  FastAPI runs the slow model calls in a thread pool.
+- **View:** `ChatPanel.vue` shows the question, proposed query, records, and answer, and
+  every outcome has its own state.
+- **Why two requests:** the model cannot see the data when it writes the query, and it must
+  not be trusted with the database. Splitting the work puts deterministic code between the
+  two requests. The second request gets the query and its stated purpose along with the
+  rows, because without them it misreads what a row means (see the revised approaches in
+  `prompts/05-a2-part2-rag-chatbot.md`).
+- **Outcomes:** `answered`; `no_match` (the query ran and found nothing, so no second
+  request is made and nothing is guessed); `insufficient_data` (the model says the data
+  cannot answer, for example weather); `rejected` (the query was not allowed and was not
+  run); `query_failed` (the query failed twice). A model service failure is an HTTP error.
+- **Stay rules:** nights are `stay_date >= check_in AND stay_date < check_out`, so check-out
+  is not a night. A hotel is available only if every night has a row and a room free. A
+  missing night is never treated as available.
+- **Grounding check:** any `$` amount in the answer that is not in the retrieved records
+  (cents divided by 100) is flagged in the notes.

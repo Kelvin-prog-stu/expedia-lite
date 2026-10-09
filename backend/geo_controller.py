@@ -135,7 +135,7 @@ class LocationServiceError(LocationError):
 
 def look_up_zip(postcode: str) -> ZipLocation:
     """Resolve a United States ZIP code to a point. See the module contract."""
-    zip_code = _validated_zip(postcode)
+    zip_code = validated_zip(postcode)
     payload = _get_json(
         GEOCODE_URL,
         {
@@ -164,7 +164,7 @@ def hotels_near_zip(postcode: str) -> NearbyHotels:
     return _nearby_hotels(payload, location)
 
 
-def _validated_zip(postcode: str) -> str:
+def validated_zip(postcode: str) -> str:
     zip_code = postcode.strip()
     if not ZIP_PATTERN.fullmatch(zip_code):
         raise InvalidZipError(postcode)

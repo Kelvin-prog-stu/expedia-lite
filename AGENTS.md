@@ -32,11 +32,24 @@ The booking features follow Model-View-Controller:
 - `geo_controller.py` is the controller for the public location API. It is the
   only module that calls Geoapify, it imports nothing from FastAPI, and its
   contract is written at the top of the file. `config.py` reads `.env`.
+- `retrieval_controller.py` is the only module that runs SQL a model proposed. It opens
+  the database read only, allows one `SELECT` over `saved_hotels`, `saved_hotel_zips` and
+  `demo_hotel_nights` (an SQLite authorizer enforces the tables and functions), and bounds
+  rows and time. It never writes.
+- `chat_controller.py` is the controller for the RAG workflow: question and schema to the
+  model, proposed query to `retrieval_controller`, retrieved records back to the model for
+  the answer. `llm_client.py` is the only module that calls Gemini.
 - Type-hint every function signature.
 - Use parameterized queries. Never build SQL from user input.
 - Return structured errors, not raw exception text.
 - Never put the API key, the request URL, or provider exception text in a
   response or a log. The key travels in the query string.
+- The Gemini key stays in the backend and travels in a request header. The model proposes
+  SQL; code decides whether it runs. Treat everything the model returns as untrusted. The
+  chatbot never changes a record and never books.
+- Fixtures and scripted model replies are labelled as such wherever they are used or
+  reported, and are never presented as live model calls. Never depend on a fixed live
+  result count.
 - A provider failure is never reported as an empty result, and a ZIP the provider
   did not establish is never turned into a search somewhere else.
 
@@ -55,6 +68,9 @@ The booking features follow Model-View-Controller:
   "Powered by Geoapify" with the results.
 - The Geoapify key stays in the backend. Never copy it into frontend code, a
   `VITE_` variable, or a screenshot. The map's tiles need no key.
+- Text from the model or the database is rendered as text. Never use `v-html`. The chat
+  panel shows the question, proposed query, retrieved records, and answer, with loading,
+  no match, insufficient data, refused, and failure states, and works from the keyboard.
 - Selecting a hotel in the list or on the map selects it in the other, by
   provider place id, and both work from the keyboard.
 
@@ -69,6 +85,23 @@ The booking features follow Model-View-Controller:
 - Cancelling keeps the record and changes its status. Only Delete removes it.
 - `backend/expedia_lite.db` is not committed. Deleting it resets the app to the
   supplied data on the next start.
+- `saved_hotels` holds hotels saved from the live API, keyed by the provider's
+  place id exactly as given. `demo_hotel_nights` holds one simulated classroom rate
+  and room count per saved hotel per night. That rate and those rooms are never
+  provider data, and the interface must say so. Both tables are separate from
+  `hotels`, which stays the supplied sample records.
+- `saved_hotel_zips` records which ZIP search a saved hotel came from, with that
+  search's centre and radius. Saving and removing touch all three tables in one
+  transaction, and a repeat save adds only what is missing and never overwrites. Use
+  `ON CONFLICT DO NOTHING`, never `INSERT OR IGNORE`, which would also swallow a failed
+  CHECK and report invalid data as saved.
+- The ZIP lookup is local first: saved hotels for the ZIP, and only if that request
+  succeeds with none, the live search. A storage error is an error, never an empty
+  result, and never falls through to the live search.
+- Tests that change data run against a throwaway database (`EXPEDIA_DB_PATH`), never the
+  real one.
+- Schema changes are additive and repeatable: `CREATE TABLE IF NOT EXISTS` in
+  `models.py`, applied on every start. Never alter or drop an Assignment 1 table.
 
 ## Verification
 
@@ -111,6 +144,16 @@ service returns for a ZIP; check behaviour, not a count.
 10. Stop the backend and search again. Expect "Backend not reachable", not an
     empty list.
 11. Run `backend/checks/check_geo.py`. Expect every check to pass.
+
+Chatbot, added for Assignment 2 Part 2. Model answers vary, so check structure and
+grounding, not wording or a fixed count.
+
+12. Run `backend/checks/check_chat.py`. Expect every check to pass. These are fixtures.
+13. With a key set, ask a stay question. Expect the proposed query, records, and an answer
+    whose amounts match the records, and a no-match question to say so.
+14. Ask for something destructive. Expect no change to the database (run
+    `backend/checks/run_live_questions.py`, which compares table fingerprints).
+15. Remove the key and ask again. Expect a clear "not configured" message.
 
 ## AutoLoop
 
