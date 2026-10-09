@@ -98,6 +98,28 @@ CREATE TABLE IF NOT EXISTS saved_hotel_zips (
 
 CREATE INDEX IF NOT EXISTS idx_saved_hotel_zips_zip ON saved_hotel_zips (zip_code);
 
+-- The chatbot's saved conversations. One row per step of a question's trace, in the order
+-- the steps happen, so a conversation can be read back from top to bottom. `role` says who
+-- supplied the content (the model's replies are 'assistant'; the stored retrieval results and
+-- errors are 'tool'). `stage` labels the step. `prompt_version` identifies the instruction
+-- file used. These rows are written by the app only: the chatbot's own queries cannot reach
+-- this table.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    message_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id  TEXT NOT NULL CHECK (length(conversation_id) > 0),
+    created_at       TEXT NOT NULL,
+    role             TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant', 'tool')),
+    stage            TEXT NOT NULL CHECK (stage IN (
+                         'question', 'proposed_sql', 'executed_sql',
+                         'retrieval_result', 'notes', 'answer', 'error')),
+    content          TEXT NOT NULL,
+    status           TEXT,
+    prompt_version   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
+    ON chat_messages (conversation_id, message_id);
+
 -- Bookkeeping that must survive restarts: whether the starter data has been
 -- loaded, and the next booking number to hand out.
 CREATE TABLE IF NOT EXISTS app_meta (

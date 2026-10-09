@@ -160,6 +160,18 @@ export function removeSavedHotel(placeId) {
  * `status` says what kind of outcome it is: answered, no_match, insufficient_data,
  * rejected, or query_failed. The model runs on the backend; nothing here knows its key.
  */
-export function askChatbot(question) {
-  return request('/chat', { method: 'POST', body: JSON.stringify({ question }) })
+export function askChatbot(question, conversationId = null) {
+  return request('/chat', {
+    method: 'POST',
+    body: JSON.stringify({ question, conversation_id: conversationId }),
+  })
+}
+
+/**
+ * A saved conversation, oldest question first: the one given, or the most recent when no id
+ * is given. Resolves to { conversation_id, turns }; no saved conversation is an empty list.
+ */
+export function loadChatHistory(conversationId = null) {
+  const query = conversationId ? `?${new URLSearchParams({ conversation_id: conversationId })}` : ''
+  return request(`/chat/history${query}`)
 }

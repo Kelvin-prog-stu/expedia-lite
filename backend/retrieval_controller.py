@@ -194,3 +194,15 @@ def schema_context() -> str:
         + f"\n\nWhat is stored right now: {hotels} saved hotel(s). {coverage} "
         + f"ZIP codes with saved hotels: {', '.join(zips) if zips else 'none'}."
     )
+
+
+def coverage_summary() -> str:
+    """One sentence on what is saved, used to explain an empty result honestly."""
+    with db.get_connection() as conn:
+        hotels = conn.execute("SELECT COUNT(*) FROM saved_hotels").fetchone()[0]
+        nights = conn.execute("SELECT MIN(stay_date), MAX(stay_date) FROM demo_hotel_nights").fetchone()
+        zips = [row[0] for row in conn.execute("SELECT DISTINCT zip_code FROM saved_hotel_zips ORDER BY 1")]
+    if not hotels:
+        return "No hotels are saved yet. Use Add to Local on a ZIP search first."
+    covered = f"nights from {nights[0]} to {nights[1]}" if nights[0] else "no stored nights"
+    return f"Saved hotels exist for ZIP {', '.join(zips)} with {covered}."

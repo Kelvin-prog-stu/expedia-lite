@@ -6,7 +6,7 @@ module imports nothing from FastAPI, so it can be exercised on its own.
 
 import os
 import sqlite3
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from models import BOOKING_CANCELLED, BOOKING_CONFIRMED, DEMO_STAY_DATES, SCHEMA
@@ -314,3 +314,46 @@ def remove_saved_hotel(place_id: str) -> None:
         conn.execute("DELETE FROM demo_hotel_nights WHERE hotel_id = ?", (place_id,))
         conn.execute("DELETE FROM saved_hotel_zips WHERE hotel_id = ?", (place_id,))
         conn.execute("DELETE FROM saved_hotels WHERE hotel_id = ?", (place_id,))
+
+
+# ---- Chat history (Assignment 2, Part 2) ------------------------------------------
+#
+# The chatbot's trace, saved as each step happens. These writes use the app's own
+# connection. The model's hotel queries use a separate read-only connection in
+# retrieval_controller and cannot see this table.
+
+
+def save_chat_message(
+    conversation_id: str,
+    role: str,
+    stage: str,
+    content: str,
+    status: str | None = None,
+    prompt_version: str | None = None,
+) -> int:
+    """Append one step of a conversation. Returns its message_id."""
+    created_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO chat_messages (conversation_id, created_at, role, stage, content, status, prompt_version)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (conversation_id, created_at, role, stage, content, status, prompt_version),
+        )
+        return cursor.lastrowid
+
+
+def list_chat_messages(conversation_id: str) -> list[dict]:
+    """Every saved step of a conversation, oldest first."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY message_id",
+            (conversation_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def latest_conversation_id() -> str | None:
+    """The conversation with the most recent saved step, or None if nothing is saved."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT conversation_id FROM chat_messages ORDER BY message_id DESC LIMIT 1").fetchone()
+    return row["conversation_id"] if row else None

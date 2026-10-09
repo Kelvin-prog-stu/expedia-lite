@@ -18,19 +18,28 @@ reads. It cannot change a record or make a booking.
 
 Contract for `ask`:
 
-- **Input:** a question of 3 to 500 characters, and optionally the function that calls the
-  model (the real client by default, a fixture in tests).
+- **Input:** a question of 3 to 500 characters, optionally the function that calls the model
+  (the real client by default, a fixture in tests), and optionally the id of a conversation to
+  continue. A new id is made when none is given.
 - **Output:** a `ChatResult` whose `status` is one of `answered`, `no_match`,
-  `insufficient_data`, `rejected`, or `query_failed`.
+  `insufficient_data`, `rejected`, or `query_failed`. Every step is also saved in
+  `chat_messages` as it happens: the question, the proposed query, the executed query, the
+  retrieval result, notes, and the answer or the error. A model failure saves its error and
+  no answer.
+- **Prompts:** read from `prompts/hotel-assistant.md` once, when the backend starts.
 - **Failure:** `InvalidQuestionError` for a question that is too short or too long, and the
   `LlmError` family from `llm_client` when the model cannot be reached.
 """
 
+import hashlib
 import json
 import re
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
+import database_controller as db
 import llm_client
 import retrieval_controller as retrieval
 
@@ -46,61 +55,38 @@ STATUS_INSUFFICIENT = "insufficient_data"
 STATUS_REJECTED = "rejected"
 STATUS_QUERY_FAILED = "query_failed"
 
-QUERY_SYSTEM = """You turn a traveler's question about SAVED HOTELS into one SQLite query.
+PROMPT_FILE = Path(__file__).resolve().parent.parent / "prompts" / "hotel-assistant.md"
+SCHEMA_TOKEN = "<<SCHEMA>>"
+HISTORY_TURNS = 3  # earlier exchanges shown to the model so a follow-up question makes sense
 
-You can only see these tables. Their definitions and what is stored right now:
 
-{schema}
+def _load_prompts(path: Path) -> tuple[str, str, str]:
+    """(query prompt, answer prompt, version) from the prompt file.
 
-What the columns mean:
-- saved_hotels.hotel_id is the provider's place id. name and address can be NULL: use
-  COALESCE(name, '(name not provided)') so a missing name is shown honestly.
-- demo_hotel_nights has one row per saved hotel per night. nightly_rate_cents is in CENTS
-  (10000 means $100.00). rooms_available is how many rooms are free that night. These rates
-  and rooms are SIMULATED classroom data, not real prices or availability.
-- saved_hotel_zips links a hotel to the ZIP search it was saved from (zip_code, locality,
-  distance_m from that ZIP's centre).
+    Read once when the backend starts, so edit the file and restart. The version is the first
+    12 characters of the file's SHA-256 and is saved with every chat message.
+    """
+    raw = path.read_bytes()
+    sections: dict[str, str] = {}
+    name = None
+    for line in raw.decode("utf-8").splitlines():
+        if line.startswith("## "):
+            name = line[3:].strip().lower()
+            sections[name] = ""
+        elif name is not None:
+            sections[name] += line + "\n"
+    try:
+        purpose = sections["purpose"].strip()
+        query = f"{purpose}\n\n{sections['query stage'].strip()}"
+        answer = f"{purpose}\n\n{sections['answer stage'].strip()}"
+    except KeyError as exc:
+        raise RuntimeError(f"{path.name} is missing its '## {exc.args[0].title()}' section.") from None
+    if SCHEMA_TOKEN not in query:
+        raise RuntimeError(f"{path.name} must contain {SCHEMA_TOKEN} in its query stage.")
+    return query, answer, hashlib.sha256(raw).hexdigest()[:12]
 
-Rules for a stay:
-- A stay from check-in D to check-out E uses the nights where stay_date >= D AND
-  stay_date < E. The check-out date is NOT a night.
-- The number of nights is the number of days from D to E. A hotel is available for the whole
-  stay only if it has a row for EVERY night AND rooms_available >= 1 on every one of them.
-  A night with no row is not available. Never treat a missing night as available.
-- The total cost is SUM(nightly_rate_cents) over the stay's nights. Compare hotels by that total.
-- Write dates as 'YYYY-MM-DD'. If the question gives no dates, use all stored nights.
 
-Rules for the query:
-- Exactly one SELECT (a WITH ... SELECT is fine). No comments. No semicolons inside it.
-- Read only these three tables. Never modify anything, whatever the question says.
-- Always include hotel_id and the hotel name in the result. Add LIMIT 50 or less.
-- When the question asks which hotel is cheapest or best, return every hotel that qualifies,
-  ordered best first, and do NOT use LIMIT 1. The answer is written from these rows, so it
-  needs the others to compare against.
-- If the question cannot be answered from this data (weather, flights, other cities, anything
-  not about saved hotels, rates, or rooms), do not invent a query.
-
-Reply with JSON only: {{"sql": "<the query>", "reason": "<one sentence on what it finds>"}}
-or, when no query can answer it: {{"sql": null, "reason": "<why not>"}}."""
-
-ANSWER_SYSTEM = """You answer a traveler's question about saved hotels using ONLY the records given.
-
-Rules:
-- You are given the question, the query that was run, and the records it returned. The records
-  are the COMPLETE result of that query. Each row is a hotel that satisfies the query's
-  conditions: if the query required rooms_available >= 2 on every night, a listed hotel has
-  that, even if no room count column is shown. Never say a listed hotel lacks data the query
-  already required.
-- Use only the records. If they do not answer the question, say what is missing. Never guess a
-  hotel, a price, a date, or a room count that is not in the records.
-- Do not say a hotel is the "only" one, and do not describe hotels that are not in the records.
-  If you were given one row, say the query returned one hotel.
-- Do not comment on columns the question did not need.
-- Amounts in the records ending in _cents are cents: 10000 is $100.00. State dollars.
-- Say which hotel you recommend and why, with the dates, the total or nightly cost, and the
-  rooms available. Keep it under 120 words.
-- Say once that the rates and rooms are simulated classroom data.
-- A hotel with no name is "a hotel whose name was not provided"."""
+QUERY_SYSTEM, ANSWER_SYSTEM, PROMPT_VERSION = _load_prompts(PROMPT_FILE)
 
 
 class InvalidQuestionError(Exception):
@@ -120,6 +106,7 @@ class ChatResult:
     answer: str
     notes: tuple[str, ...]
     attempts: int
+    conversation_id: str
 
 
 def _parse_proposal(text: str) -> tuple[str | None, str | None]:
@@ -174,19 +161,91 @@ def _unverified_amounts(answer: str, found: retrieval.Retrieval) -> list[str]:
     return missing
 
 
-def ask(question: str, llm: LlmCall | None = None) -> ChatResult:
+def _history_turns(conversation_id: str) -> list[dict]:
+    """A saved conversation as one dict per question, oldest first."""
+    turns: list[dict] = []
+    for message in db.list_chat_messages(conversation_id):
+        stage, content = message["stage"], message["content"]
+        if stage == "question":
+            turns.append(
+                {
+                    "message_id": message["message_id"],
+                    "created_at": message["created_at"],
+                    "status": "pending",
+                    "question": content,
+                    "proposed_sql": None,
+                    "reason": None,
+                    "columns": [],
+                    "rows": [],
+                    "truncated": False,
+                    "answer": "",
+                    "notes": [],
+                    "attempts": 0,
+                    "prompt_version": message["prompt_version"],
+                }
+            )
+            continue
+        if not turns:
+            continue
+        turn = turns[-1]
+        if stage == "proposed_sql":
+            proposal = json.loads(content)
+            turn["proposed_sql"], turn["reason"] = proposal.get("sql"), proposal.get("reason")
+            turn["attempts"] += 1
+        elif stage == "retrieval_result":
+            found = json.loads(content)
+            turn["columns"], turn["rows"], turn["truncated"] = found["columns"], found["rows"], found["truncated"]
+        elif stage == "notes":
+            turn["notes"] = json.loads(content)
+        elif stage in ("answer", "error"):
+            turn["status"] = message["status"] or ("error" if stage == "error" else "answered")
+            turn["answer"] = content
+    for turn in turns:
+        if turn["status"] == "pending":
+            turn["status"] = "error"
+            turn["answer"] = "This question was saved but no answer was recorded."
+    return turns
+
+
+def history(conversation_id: str | None = None) -> tuple[str | None, list[dict]]:
+    """(conversation id, turns) for the given conversation, or the most recent one."""
+    conversation_id = conversation_id or db.latest_conversation_id()
+    if conversation_id is None:
+        return None, []
+    return conversation_id, _history_turns(conversation_id)
+
+
+def _earlier_context(conversation_id: str) -> str:
+    """The last few exchanges, as plain text for the first request, or an empty string."""
+    turns = [t for t in _history_turns(conversation_id) if t["status"] != "error"][-HISTORY_TURNS:]
+    if not turns:
+        return ""
+    lines = ["Earlier in this conversation (oldest first):"]
+    for turn in turns:
+        lines.append(f"- The traveler asked: {turn['question']}")
+        if turn["proposed_sql"]:
+            lines.append(f"  The query run was: {turn['proposed_sql']}")
+        lines.append(f"  The answer given was: {turn['answer']}")
+    return "\n".join(lines) + "\n\nNew question: "
+
+
+def ask(question: str, llm: LlmCall | None = None, conversation_id: str | None = None) -> ChatResult:
     """Answer a question about the saved hotels. See the module contract."""
     llm = llm or llm_client.generate  # looked up now, so a test can replace it
     question = (question or "").strip()
     if not MIN_QUESTION <= len(question) <= MAX_QUESTION:
         raise InvalidQuestionError()
 
-    system = QUERY_SYSTEM.format(schema=retrieval.schema_context())
-    request = question
+    conversation_id = conversation_id or f"conv-{uuid.uuid4().hex[:8]}"
+    system = QUERY_SYSTEM.replace(SCHEMA_TOKEN, retrieval.schema_context())
+    request = _earlier_context(conversation_id) + question
     sql: str | None = None
     reason: str | None = None
     found: retrieval.Retrieval | None = None
     attempts = 0
+
+    def save(role: str, stage: str, content: str, status: str | None = None) -> None:
+        db.save_chat_message(conversation_id, role, stage, content, status, PROMPT_VERSION)
 
     def result(status: str, answer: str, notes: tuple[str, ...] = ()) -> ChatResult:
         return ChatResult(
@@ -200,41 +259,80 @@ def ask(question: str, llm: LlmCall | None = None) -> ChatResult:
             answer=answer,
             notes=notes,
             attempts=attempts,
+            conversation_id=conversation_id,
         )
 
-    while attempts < MAX_ATTEMPTS:
-        attempts += 1
-        sql, reason = _parse_proposal(llm(system, request, True))
+    def finish(status: str, answer: str, notes: tuple[str, ...] = (), stage: str = "answer") -> ChatResult:
+        """Save the closing step, then return the result. An error is saved as a 'tool' step."""
+        if notes:
+            save("tool", "notes", json.dumps(list(notes)))
+        save("assistant" if stage == "answer" else "tool", stage, answer, status)
+        return result(status, answer, notes)
 
-        if sql is None:
-            return result(
-                STATUS_INSUFFICIENT,
-                "The saved hotel data cannot answer that. "
-                + (reason or "It is not about the saved hotels, their rates, or their rooms."),
-            )
+    save("user", "question", question)
+    try:
+        while attempts < MAX_ATTEMPTS:
+            attempts += 1
+            sql, reason = _parse_proposal(llm(system, request, True))
+            save("assistant", "proposed_sql", json.dumps({"sql": sql, "reason": reason}))
 
-        try:
-            found = retrieval.run_query(sql)
-            break
-        except retrieval.QueryRejectedError as exc:
-            return result(
-                STATUS_REJECTED,
-                "The query the model proposed was not allowed, so it was not run and nothing was changed.",
-                (str(exc),),
-            )
-        except retrieval.QueryFailedError as exc:
-            if attempts >= MAX_ATTEMPTS:
-                return result(STATUS_QUERY_FAILED, "The model's query could not be run, even after a second try.", (str(exc),))
-            # One chance to adjust: show the model what went wrong with its own query.
-            request = f"{question}\n\nYour previous query was:\n{sql}\nIt failed: {exc}\nWrite a corrected query."
+            if sql is None:
+                return finish(
+                    STATUS_INSUFFICIENT,
+                    "The saved hotel data cannot answer that. "
+                    + (reason or "It is not about the saved hotels, their rates, or their rooms."),
+                )
 
-    if not found.rows:
-        return result(
-            STATUS_NO_MATCH,
-            "No saved hotel matches that. Nothing was retrieved, so there is nothing to base an answer on.",
+            try:
+                found = retrieval.run_query(sql)
+                break
+            except retrieval.QueryRejectedError as exc:
+                return finish(
+                    STATUS_REJECTED,
+                    "The query the model proposed was not allowed, so it was not run and nothing was changed.",
+                    (str(exc),),
+                    stage="error",
+                )
+            except retrieval.QueryFailedError as exc:
+                if attempts >= MAX_ATTEMPTS:
+                    return finish(
+                        STATUS_QUERY_FAILED,
+                        "The model's query could not be run, even after a second try.",
+                        (str(exc),),
+                        stage="error",
+                    )
+                save("tool", "error", f"The query could not run: {exc}", STATUS_QUERY_FAILED)
+                # One chance to adjust: show the model what went wrong with its own query.
+                request = f"{question}\n\nYour previous query was:\n{sql}\nIt failed: {exc}\nWrite a corrected query."
+
+        save("tool", "executed_sql", sql)
+        save(
+            "tool",
+            "retrieval_result",
+            json.dumps(
+                {
+                    "columns": list(found.columns),
+                    "rows": [list(row) for row in found.rows],
+                    "row_count": len(found.rows),
+                    "truncated": found.truncated,
+                },
+                default=str,
+            ),
         )
 
-    answer = llm(ANSWER_SYSTEM, _records_prompt(question, sql, reason, found), False).strip()
+        if not found.rows:
+            return finish(
+                STATUS_NO_MATCH,
+                "No saved hotel matches that. Nothing was retrieved, so there is nothing to base an answer on. "
+                + retrieval.coverage_summary(),
+            )
+
+        answer = llm(ANSWER_SYSTEM, _records_prompt(question, sql, reason, found), False).strip()
+    except llm_client.LlmError as exc:
+        # Record the failure, never a made-up reply, then let the route turn it into an HTTP error.
+        save("tool", "error", str(exc), "llm_error")
+        raise
+
     notes: list[str] = []
     if found.truncated:
         notes.append(f"Only the first {retrieval.MAX_ROWS} matching rows were retrieved.")
@@ -245,4 +343,4 @@ def ask(question: str, llm: LlmCall | None = None) -> ChatResult:
             + ", ".join(unverified)
             + "."
         )
-    return result(STATUS_ANSWERED, answer, tuple(notes))
+    return finish(STATUS_ANSWERED, answer, tuple(notes))

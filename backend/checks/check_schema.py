@@ -21,7 +21,7 @@ import database_controller as db  # noqa: E402
 from models import SCHEMA  # noqa: E402
 
 ASSIGNMENT_1_TABLES = ("hotels", "trips", "users", "bookings", "app_meta")
-NEW_TABLES = ("saved_hotels", "demo_hotel_nights", "saved_hotel_zips")
+NEW_TABLES = ("saved_hotels", "demo_hotel_nights", "saved_hotel_zips", "chat_messages")
 
 results: list[tuple[str, bool, str]] = []
 
@@ -62,7 +62,7 @@ def snapshot(conn: sqlite3.Connection) -> dict:
 
 
 def tables_of(conn: sqlite3.Connection) -> set[str]:
-    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'sqlite_sequence'")}
 
 
 def refused(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> bool:
@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory() as folder:
         seeded = conn.execute("SELECT value FROM app_meta WHERE key = 'seeded'").fetchone()[0]
         new_rows = [conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in NEW_TABLES]
     record(
-        "migrating an existing database adds both tables",
+        "migrating an existing database adds the saved-hotel tables and the chat history",
         after_tables == set(ASSIGNMENT_1_TABLES) | set(NEW_TABLES),
         str(sorted(after_tables - set(ASSIGNMENT_1_TABLES))),
     )

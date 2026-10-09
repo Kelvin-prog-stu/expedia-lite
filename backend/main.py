@@ -19,6 +19,7 @@ import geo_controller as geo
 import llm_client
 from schemas import (
     Booking,
+    ChatHistoryResponse,
     ChatRequest,
     ChatResponse,
     BookingCreate,
@@ -119,8 +120,15 @@ def chat(payload: ChatRequest) -> ChatResponse:
     A plain `def`, so FastAPI runs the two slow model requests in a worker thread rather
     than holding up every other request.
     """
-    result = chat_controller.ask(payload.question)
+    result = chat_controller.ask(payload.question, conversation_id=payload.conversation_id)
     return ChatResponse(**asdict(result), model=config.gemini_model())
+
+
+@app.get("/api/chat/history", response_model=ChatHistoryResponse)
+def chat_history(conversation_id: str | None = Query(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")) -> ChatHistoryResponse:
+    """A saved conversation, oldest question first: the given one, or the most recent."""
+    found_id, turns = chat_controller.history(conversation_id)
+    return ChatHistoryResponse(conversation_id=found_id, turns=turns)
 
 
 @app.get("/api/hotels", response_model=SearchResponse)

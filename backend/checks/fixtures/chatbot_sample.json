@@ -218,6 +218,7 @@
     "other table: users": "SELECT * FROM users",
     "other table: hotels": "SELECT * FROM hotels",
     "other table: app_meta": "SELECT * FROM app_meta",
+    "other table: chat_messages": "SELECT * FROM chat_messages",
     "catalogue": "SELECT name, sql FROM sqlite_master",
     "load extension": "SELECT load_extension('evil.dll')",
     "recursive": "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r) SELECT n FROM r"

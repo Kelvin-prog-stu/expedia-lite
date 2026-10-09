@@ -188,6 +188,7 @@ class ChatRequest(BaseModel):
     """A question for the hotel chatbot."""
 
     question: str = Field(min_length=3, max_length=500)
+    conversation_id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class ChatResponse(BaseModel):
@@ -207,4 +208,30 @@ class ChatResponse(BaseModel):
     answer: str
     notes: list[str]
     attempts: int
+    conversation_id: str
     model: str
+
+
+class ChatTurn(BaseModel):
+    """One saved question and what became of it, rebuilt from the conversation history."""
+
+    message_id: int
+    created_at: str
+    status: str
+    question: str
+    proposed_sql: str | None = None
+    reason: str | None = None
+    columns: list[str]
+    rows: list[list[Any]]
+    truncated: bool
+    answer: str
+    notes: list[str]
+    attempts: int
+    prompt_version: str | None = None
+
+
+class ChatHistoryResponse(BaseModel):
+    """A saved conversation, oldest question first. Empty when nothing is saved yet."""
+
+    conversation_id: str | None = None
+    turns: list[ChatTurn]

@@ -64,9 +64,13 @@ def proposal(name: str) -> str:
 
 
 def tables() -> dict:
+    """Every table except the chat history, which the chatbot is meant to write."""
     conn = sqlite3.connect(DB_FILE)
     try:
-        names = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY 1")]
+        names = [
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT IN ('chat_messages', 'sqlite_sequence') ORDER BY 1")
+        ]
         return {n: conn.execute(f"SELECT * FROM {n} ORDER BY 1, 2").fetchall() for n in names}
     finally:
         conn.close()
@@ -138,6 +142,7 @@ m = FakeModel(proposal("no_match_outside_dates"), "THIS SHOULD NEVER BE REQUESTE
 r5 = chat.ask(SCENARIOS["no_match_outside_dates"]["question"], m)
 record("dates with no stored nights give no_match", r5.status == "no_match" and r5.rows == (), r5.status)
 record("with nothing retrieved there is no second model request to invent an answer", len(m.calls) == 1, f"{len(m.calls)} request")
+record("the no-match answer also says what is saved, so the traveler can see what is missing", "Saved hotels exist for ZIP 10001, 16802" in r5.answer and "2026-10-10 to 2026-10-14" in r5.answer, r5.answer[-80:])
 record("the no-match answer says plainly that nothing was retrieved", "No saved hotel matches" in r5.answer and "nothing to base an answer on" in r5.answer, r5.answer)
 
 m = FakeModel(proposal("insufficient_not_about_hotels"))
@@ -354,6 +359,114 @@ with TestClient(main.app) as client:
     saved = client.get("/api/saved-hotels", params={"zip": "16802"}).json()
     record("saved hotels still list for a ZIP with their nights", len(saved["hotels"]) == 3 and all(len(h["nights"]) in (4, 5) for h in saved["hotels"]), f"{len(saved['hotels'])} hotels")
     record("Assignment 1 tables are untouched by everything above", all(tables()[t] == BASELINE[t] for t in ("hotels", "trips", "users", "bookings", "app_meta")), "5 tables compared")
+
+# ---- Saved conversation history -----------------------------------------------------------
+import hashlib  # noqa: E402
+
+
+def stages(conversation_id: str) -> list[str]:
+    return [m["stage"] for m in db.list_chat_messages(conversation_id)]
+
+
+answered = chat.ask(SCENARIOS["cheapest_two_nights"]["question"], FakeModel(proposal("cheapest_two_nights"), SCENARIOS["cheapest_two_nights"]["answer"]))
+saved_steps = db.list_chat_messages(answered.conversation_id)
+record("an answered question is saved step by step, in order", [m["stage"] for m in saved_steps] == ["question", "proposed_sql", "executed_sql", "retrieval_result", "answer"], str([m["stage"] for m in saved_steps]))
+record("each step carries who supplied it: user, assistant, tool, tool, assistant", [m["role"] for m in saved_steps] == ["user", "assistant", "tool", "tool", "assistant"], str([m["role"] for m in saved_steps]))
+record("steps have rising ids, non-decreasing timestamps, and the prompt version", [m["message_id"] for m in saved_steps] == sorted(m["message_id"] for m in saved_steps) and [m["created_at"] for m in saved_steps] == sorted(m["created_at"] for m in saved_steps) and all(m["prompt_version"] == chat.PROMPT_VERSION for m in saved_steps), f"version {chat.PROMPT_VERSION}")
+record("the saved user message is the question and the saved answer is the one shown", (saved_steps[0]["content"] == SCENARIOS["cheapest_two_nights"]["question"] and saved_steps[-1]["content"] == answered.answer and saved_steps[-1]["status"] == "answered"), "question and answer match")
+record("the executed query and the retrieved records are saved", saved_steps[2]["content"] == answered.proposed_sql and json.loads(saved_steps[3]["content"])["row_count"] == 3 and json.loads(saved_steps[3]["content"])["columns"][1] == "name", "3 rows saved")
+
+nothing = chat.ask(SCENARIOS["no_match_outside_dates"]["question"], FakeModel(proposal("no_match_outside_dates")))
+record("a no match is saved with its empty retrieval and a no_match answer", stages(nothing.conversation_id) == ["question", "proposed_sql", "executed_sql", "retrieval_result", "answer"] and db.list_chat_messages(nothing.conversation_id)[-1]["status"] == "no_match" and json.loads(db.list_chat_messages(nothing.conversation_id)[3]["content"])["row_count"] == 0, "no_match saved")
+unknown = chat.ask(SCENARIOS["insufficient_not_about_hotels"]["question"], FakeModel(proposal("insufficient_not_about_hotels")))
+record("insufficient data is saved without an executed query", stages(unknown.conversation_id) == ["question", "proposed_sql", "answer"] and db.list_chat_messages(unknown.conversation_id)[-1]["status"] == "insufficient_data", str(stages(unknown.conversation_id)))
+refused = chat.ask("Delete every saved hotel", FakeModel(json.dumps({"sql": FIXTURE["disallowed_proposals"]["delete"], "reason": "fixture"})))
+refused_steps = db.list_chat_messages(refused.conversation_id)
+record("a refused query is saved as an error, with no executed query and no assistant answer", [m["stage"] for m in refused_steps] == ["question", "proposed_sql", "notes", "error"] and refused_steps[-1]["status"] == "rejected" and refused_steps[-1]["role"] == "tool" and not any(m["stage"] in ("executed_sql", "answer") for m in refused_steps), str([m["stage"] for m in refused_steps]))
+
+broken = json.dumps({"sql": "SELECT no_such_column FROM saved_hotels", "reason": "fixture"})
+failed_twice = chat.ask("Something with a bad column", FakeModel(broken, broken))
+record("a query that fails twice saves both proposals, the first failure, and a final error", stages(failed_twice.conversation_id).count("proposed_sql") == 2 and stages(failed_twice.conversation_id)[-1] == "error" and failed_twice.status == "query_failed", str(stages(failed_twice.conversation_id)))
+
+
+class Unavailable:
+    calls = 0
+
+    def __call__(self, system, user, json_output):
+        Unavailable.calls += 1
+        raise llm_client.LlmServiceError("fixture outage")
+
+
+try:
+    chat.ask("Will this one be saved?", Unavailable(), conversation_id="conv-outage")
+except llm_client.LlmError:
+    pass
+outage = db.list_chat_messages("conv-outage")
+record("a model outage saves the question and its error, and no assistant reply", [m["stage"] for m in outage] == ["question", "error"] and outage[-1]["status"] == "llm_error" and not any(m["role"] == "assistant" for m in outage), str([(m["role"], m["stage"]) for m in outage]))
+
+# Follow-ups: earlier turns of the same conversation reach the first request only.
+first = FakeModel(proposal("cheapest_two_nights"), SCENARIOS["cheapest_two_nights"]["answer"])
+chat.ask(SCENARIOS["cheapest_two_nights"]["question"], first, conversation_id="conv-follow")
+second = FakeModel(proposal("three_nights_missing_night"), SCENARIOS["three_nights_missing_night"]["answer"])
+followed = chat.ask("What about October 12 to October 15?", second, conversation_id="conv-follow")
+record("a follow-up in the same conversation shows the model the earlier question, query, and answer", "Earlier in this conversation" in second.calls[0]["user"] and SCENARIOS["cheapest_two_nights"]["question"] in second.calls[0]["user"] and SCENARIOS["cheapest_two_nights"]["answer"] in second.calls[0]["user"] and second.calls[0]["user"].endswith("What about October 12 to October 15?"), "history in request 1")
+record("a follow-up is saved under the same conversation id", followed.conversation_id == "conv-follow" and stages("conv-follow").count("question") == 2, "2 questions, one id")
+fresh = FakeModel(proposal("cheapest_two_nights"), SCENARIOS["cheapest_two_nights"]["answer"])
+chat.ask("A brand new conversation about hotels", fresh)
+record("a new conversation starts without earlier turns", "Earlier in this conversation" not in fresh.calls[0]["user"], "no history carried over")
+
+# Reading it back, including through a new connection to the file (what a restart sees).
+turns = chat.history("conv-follow")[1]
+record("history rebuilds each question with its status, query, records, and answer", len(turns) == 2 and turns[0]["status"] == "answered" and turns[0]["proposed_sql"] and turns[0]["rows"] and turns[0]["answer"] == SCENARIOS["cheapest_two_nights"]["answer"] and turns[0]["attempts"] == 1, f"{len(turns)} turns")
+outage_turn = chat.history("conv-outage")[1][0]
+record("history shows a failed attempt as a failure, not an answer", outage_turn["status"] == "llm_error" and "fixture outage" in outage_turn["answer"], outage_turn["status"])
+raw = sqlite3.connect(DB_FILE)
+persisted = raw.execute("SELECT COUNT(*) FROM chat_messages WHERE conversation_id = 'conv-follow'").fetchone()[0]
+raw.close()
+record("the saved steps are in the database file itself, readable by a new connection", persisted == len(db.list_chat_messages("conv-follow")) and persisted >= 10, f"{persisted} rows")
+
+with TestClient(main.app) as client:
+    real_generate = llm_client.generate
+    served = FakeModel(proposal("cheapest_two_nights"), SCENARIOS["cheapest_two_nights"]["answer"], proposal("cheapest_two_nights"), SCENARIOS["cheapest_two_nights"]["answer"])
+    llm_client.generate = lambda system, user, json_output=False: served(system, user, json_output)
+    try:
+        one = client.post("/api/chat", json={"question": SCENARIOS["cheapest_two_nights"]["question"], "conversation_id": "demo-001"}).json()
+        two = client.post("/api/chat", json={"question": "And the same stay again?", "conversation_id": "demo-001"}).json()
+    finally:
+        llm_client.generate = real_generate
+    record("POST /api/chat keeps the conversation id it is given", one["conversation_id"] == "demo-001" and two["conversation_id"] == "demo-001", "demo-001 twice")
+    no_id = client.get("/api/chat/history", params={"conversation_id": "demo-001"}).json()
+    record("GET /api/chat/history returns the saved turns, oldest first", no_id["conversation_id"] == "demo-001" and [t["question"] for t in no_id["turns"]] == [SCENARIOS["cheapest_two_nights"]["question"], "And the same stay again?"], f"{len(no_id['turns'])} turns")
+    latest = client.get("/api/chat/history").json()
+    record("GET /api/chat/history with no id returns the most recent conversation", latest["conversation_id"] == "demo-001", latest["conversation_id"])
+    empty = client.get("/api/chat/history", params={"conversation_id": "does-not-exist"}).json()
+    record("an unknown conversation is an empty list, not an error", empty["turns"] == [], "no turns")
+    record("a conversation id with odd characters is refused", client.get("/api/chat/history", params={"conversation_id": "x; DROP TABLE"}).status_code == 422, "422")
+
+# The chatbot's own queries cannot read or change the history.
+before_rows = len(db.list_chat_messages("conv-follow"))
+guard = []
+for sql in ("SELECT * FROM chat_messages", "DELETE FROM chat_messages", "UPDATE chat_messages SET content = 'x'"):
+    try:
+        retrieval.run_query(sql)
+        guard.append(False)
+    except retrieval.QueryRejectedError:
+        guard.append(True)
+record("a model query cannot read, delete, or edit the saved conversations", all(guard) and len(db.list_chat_messages("conv-follow")) == before_rows, f"{sum(guard)} of 3 refused")
+
+# ---- The prompt file ----------------------------------------------------------------------
+prompt_file = Path(__file__).resolve().parent.parent.parent / "prompts" / "hotel-assistant.md"
+record("the prompt version is the first 12 characters of the file's SHA-256", chat.PROMPT_VERSION == hashlib.sha256(prompt_file.read_bytes()).hexdigest()[:12], chat.PROMPT_VERSION)
+record("the prompt file explains both JOINs, the cents rule, and the simulated label", all(s in chat.QUERY_SYSTEM for s in ("First JOIN", "saved_hotel_zips z ON", "Second JOIN", "demo_hotel_nights n ON", "CENTS", "SIMULATED")) and "cents" in chat.ANSWER_SYSTEM and "simulated" in chat.ANSWER_SYSTEM, "present")
+record("the loaded prompt reaches the model with the live schema filled in", chat.SCHEMA_TOKEN not in model.calls[0]["system"] and "CREATE TABLE saved_hotels" in model.calls[0]["system"] and "First JOIN" in model.calls[0]["system"], "schema substituted")
+bad_prompt = Path(_folder.name) / "bad_prompt.md"
+bad_prompt.write_text("## Purpose\n\nonly this\n", encoding="utf-8")
+try:
+    chat._load_prompts(bad_prompt)
+    loader_error = ""
+except RuntimeError as exc:
+    loader_error = str(exc)
+record("a prompt file missing a section stops startup with a clear message", "Query Stage" in loader_error or "query stage" in loader_error.lower(), loader_error)
 
 gc.collect()
 _folder.cleanup()
