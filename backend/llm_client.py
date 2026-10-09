@@ -7,13 +7,16 @@ Contract for `generate`:
   request header, never in the URL, so it cannot show up in a logged address.
 - **Output:** the model's text.
 - **Failure:** `LlmNotConfiguredError` when no key is set, `LlmRateLimitedError` on HTTP 429,
-  `LlmServiceError` when the request fails or the service answers an error, and
+  `LlmServiceError` when the request fails or the service answers an error (HTTP 503 is
+  retried twice first), and
   `LlmBadOutputError` when it answers with no usable text. No message carries the key, the
   request body, or the provider's raw error text.
 
 The model never touches the database. Callers pass what it should see in the prompt, and
 the backend decides what to do with what comes back.
 """
+
+import time
 
 import httpx
 
@@ -22,6 +25,10 @@ from config import gemini_api_key, gemini_model
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 REQUEST_TIMEOUT_SECONDS = 45.0
 MAX_OUTPUT_TOKENS = 1500
+# The free tier answers 503 "high demand" in bursts. That is worth a short retry; a timeout,
+# a 429, or any other error is not, so those fail at once.
+MAX_503_RETRIES = 2
+RETRY_DELAY_SECONDS = 2.0
 
 
 class LlmError(Exception):
@@ -67,15 +74,19 @@ def generate(system: str, user: str, json_output: bool = False) -> str:
     if json_output:
         body["generationConfig"]["responseMimeType"] = "application/json"
 
-    try:
-        response = httpx.post(
-            GEMINI_URL.format(model=gemini_model()),
-            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-            json=body,
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError as exc:
-        raise LlmServiceError(type(exc).__name__) from None
+    for attempt in range(MAX_503_RETRIES + 1):
+        try:
+            response = httpx.post(
+                GEMINI_URL.format(model=gemini_model()),
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json=body,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+        except httpx.HTTPError as exc:
+            raise LlmServiceError(type(exc).__name__) from None
+        if response.status_code != 503 or attempt == MAX_503_RETRIES:
+            break
+        time.sleep(RETRY_DELAY_SECONDS)
 
     if response.status_code == 429:
         raise LlmRateLimitedError()

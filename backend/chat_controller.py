@@ -74,6 +74,9 @@ Rules for the query:
 - Exactly one SELECT (a WITH ... SELECT is fine). No comments. No semicolons inside it.
 - Read only these three tables. Never modify anything, whatever the question says.
 - Always include hotel_id and the hotel name in the result. Add LIMIT 50 or less.
+- When the question asks which hotel is cheapest or best, return every hotel that qualifies,
+  ordered best first, and do NOT use LIMIT 1. The answer is written from these rows, so it
+  needs the others to compare against.
 - If the question cannot be answered from this data (weather, flights, other cities, anything
   not about saved hotels, rates, or rooms), do not invent a query.
 
@@ -83,8 +86,16 @@ or, when no query can answer it: {{"sql": null, "reason": "<why not>"}}."""
 ANSWER_SYSTEM = """You answer a traveler's question about saved hotels using ONLY the records given.
 
 Rules:
+- You are given the question, the query that was run, and the records it returned. The records
+  are the COMPLETE result of that query. Each row is a hotel that satisfies the query's
+  conditions: if the query required rooms_available >= 2 on every night, a listed hotel has
+  that, even if no room count column is shown. Never say a listed hotel lacks data the query
+  already required.
 - Use only the records. If they do not answer the question, say what is missing. Never guess a
   hotel, a price, a date, or a room count that is not in the records.
+- Do not say a hotel is the "only" one, and do not describe hotels that are not in the records.
+  If you were given one row, say the query returned one hotel.
+- Do not comment on columns the question did not need.
 - Amounts in the records ending in _cents are cents: 10000 is $100.00. State dollars.
 - Say which hotel you recommend and why, with the dates, the total or nightly cost, and the
   rooms available. Keep it under 120 words.
@@ -127,10 +138,14 @@ def _parse_proposal(text: str) -> tuple[str | None, str | None]:
     return (sql if isinstance(sql, str) and sql.strip() else None, reason if isinstance(reason, str) else None)
 
 
-def _records_prompt(question: str, found: retrieval.Retrieval) -> str:
+def _records_prompt(question: str, sql: str, reason: str | None, found: retrieval.Retrieval) -> str:
     records = [dict(zip(found.columns, row, strict=True)) for row in found.rows]
     more = "\nThere were more matching rows than are shown here." if found.truncated else ""
-    return f"Question: {question}\n\nRecords retrieved from the database:\n{json.dumps(records, indent=1)}{more}"
+    meant = f"\nWhat the query was meant to find: {reason}" if reason else ""
+    return (
+        f"Question: {question}\n\nQuery that was run:\n{sql}{meant}\n\n"
+        f"Records retrieved from the database:\n{json.dumps(records, indent=1)}{more}"
+    )
 
 
 _DOLLARS = re.compile(r"\$\s?(\d[\d,]*(?:\.\d+)?)")
@@ -219,7 +234,7 @@ def ask(question: str, llm: LlmCall | None = None) -> ChatResult:
             "No saved hotel matches that. Nothing was retrieved, so there is nothing to base an answer on.",
         )
 
-    answer = llm(ANSWER_SYSTEM, _records_prompt(question, found), False).strip()
+    answer = llm(ANSWER_SYSTEM, _records_prompt(question, sql, reason, found), False).strip()
     notes: list[str] = []
     if found.truncated:
         notes.append(f"Only the first {retrieval.MAX_ROWS} matching rows were retrieved.")

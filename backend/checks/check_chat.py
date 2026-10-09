@@ -117,6 +117,7 @@ record("the proposed query is returned to the interface", r.proposed_sql == SCEN
 record("the retrieved records are the right hotels, cheapest first", names == ["Quiet Test Lodge", "Harbor Test Inn", "Far Test Suites"] and totals == [18000, 23000, 30000], str(list(zip(names, totals))))
 record("a hotel with 0 rooms on a night of the stay is not offered", "(name not provided)" not in names, "the nameless hotel is absent")
 record("the second request carries the question and the retrieved records", SCENARIOS["cheapest_two_nights"]["question"] in model.calls[1]["user"] and "Quiet Test Lodge" in model.calls[1]["user"] and "18000" in model.calls[1]["user"], "records are in the answer prompt")
+record("the second request also carries the query that ran and what it was meant to find", SCENARIOS["cheapest_two_nights"]["proposal"]["sql"] in model.calls[1]["user"] and SCENARIOS["cheapest_two_nights"]["proposal"]["reason"] in model.calls[1]["user"], "sql and reason present")
 record("the second request is told to use only the records", "ONLY the records" in model.calls[1]["system"], "grounding rule present")
 record("the answer is the model's reply, shown with the records", r.answer == SCENARIOS["cheapest_two_nights"]["answer"], r.answer[:60])
 record("an answer whose amounts all match the records raises no warning", r.notes == (), "no notes")
@@ -268,6 +269,36 @@ for label, (reply, expected) in failures.items():
     messages.append(str(got))
     record(f"model failure ({label}) is reported as {expected.__name__}", isinstance(got, expected), str(got)[:90])
 record("no model error message carries the key or the provider's raw error text", all(FAKE_KEY not in m and "invalid" not in m for m in messages), "keys and raw text withheld")
+
+# A 503 "high demand" is retried briefly; nothing else is.
+llm_client.RETRY_DELAY_SECONDS = 0
+calls = []
+replies = [Reply(503, {}), Reply(503, {}), good]
+
+
+def sequence_post(url, headers=None, json=None, timeout=None):
+    calls.append(1)
+    return replies.pop(0)
+
+
+def try_generate():
+    try:
+        return llm_client.generate("system", "user", True)
+    except llm_client.LlmError as exc:
+        return exc
+
+
+llm_client.httpx.post = sequence_post
+retried = try_generate()
+record("two 503 replies then a good one still returns the answer (3 requests)", retried == "hello" and len(calls) == 3, f"{len(calls)} requests, {retried!r}")
+calls.clear()
+replies = [Reply(503, {}), Reply(503, {}), Reply(503, {}), good]
+retried = try_generate()
+record("a 503 that keeps coming gives up after 3 requests as LlmServiceError", isinstance(retried, llm_client.LlmServiceError) and len(calls) == 3, f"{len(calls)} requests, {type(retried).__name__}")
+calls.clear()
+replies = [Reply(500, {}), good]
+retried = try_generate()
+record("a 500 is not retried", isinstance(retried, llm_client.LlmServiceError) and len(calls) == 1, f"{len(calls)} request")
 
 os.environ["GEMINI_API_KEY"] = "   "
 got, _ = outcome(good)

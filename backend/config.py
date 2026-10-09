@@ -33,7 +33,11 @@ def geoapify_key_status() -> str:
 # The chatbot's model provider. Only Gemini is wired; the key stays in the backend.
 GEMINI_KEY_SETTING = "GEMINI_API_KEY"
 GEMINI_MODEL_SETTING = "GEMINI_MODEL"
-DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+# On 2026-10-08 gemini-3.8-flash did not answer a one word prompt within 90 seconds, and
+# gemini-3.6-flash answered 503 "high demand" or 429 on most requests. gemini-3.5-flash-lite
+# answered every request in a few seconds, and the models page recommends it for new projects.
+# Override with GEMINI_MODEL.
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
 def gemini_api_key() -> str | None:
