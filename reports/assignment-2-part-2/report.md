@@ -8,7 +8,8 @@
   This report was added in the commit after it and changes no code.
 - Earlier work is still in the history: Assignment 1 Part 1 (`6f4b9f0`) and Assignment 2
   Part 1 (`bdf520f`) are both ancestors of `main`.
-- Review: before each commit the agent read the diff with `git diff`.
+- Review: before each commit the agent read the diff with `git diff`, and I reviewed the changes in
+  VS Code Source Control.
 
 Every file below is linked at the assessed commit, so the links keep working as the
 project changes.
