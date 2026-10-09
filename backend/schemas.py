@@ -1,6 +1,6 @@
 """Request and response models. Every value crossing the API is validated here."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -182,3 +182,29 @@ class SaveHotelResponse(BaseModel):
 
 class SavedStatusResponse(BaseModel):
     saved_ids: list[str]
+
+
+class ChatRequest(BaseModel):
+    """A question for the hotel chatbot."""
+
+    question: str = Field(min_length=3, max_length=500)
+
+
+class ChatResponse(BaseModel):
+    """The whole chain for one question, so the interface can show every step.
+
+    `status` says what kind of outcome this is: an answer, nothing matched, the data cannot
+    answer it, the proposed query was not allowed, or it could not run.
+    """
+
+    status: Literal["answered", "no_match", "insufficient_data", "rejected", "query_failed"]
+    question: str
+    proposed_sql: str | None = None
+    reason: str | None = None
+    columns: list[str]
+    rows: list[list[Any]]
+    truncated: bool
+    answer: str
+    notes: list[str]
+    attempts: int
+    model: str

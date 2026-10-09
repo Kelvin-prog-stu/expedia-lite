@@ -12,11 +12,15 @@ from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import chat_controller
 import config
 import database_controller as db
 import geo_controller as geo
+import llm_client
 from schemas import (
     Booking,
+    ChatRequest,
+    ChatResponse,
     BookingCreate,
     BookingUpdate,
     HotelResult,
@@ -60,6 +64,7 @@ async def health() -> dict:
         "version": VERSION,
         "records": db.record_counts(),
         "geoapify": config.geoapify_key_status(),
+        "chatbot": {"provider": "gemini", "model": config.gemini_model(), "status": config.llm_key_status()},
     }
 
 
@@ -105,6 +110,17 @@ async def remove_saved_hotel(place_id: str = Query(min_length=1)) -> Response:
     """Remove a saved hotel with its ZIP links and nights, or change nothing."""
     db.remove_saved_hotel(place_id)
     return Response(status_code=204)
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+def chat(payload: ChatRequest) -> ChatResponse:
+    """Answer a question about the saved hotels. Reads only; it never changes a record.
+
+    A plain `def`, so FastAPI runs the two slow model requests in a worker thread rather
+    than holding up every other request.
+    """
+    result = chat_controller.ask(payload.question)
+    return ChatResponse(**asdict(result), model=config.gemini_model())
 
 
 @app.get("/api/hotels", response_model=SearchResponse)
@@ -216,3 +232,17 @@ async def handle_location_service(request: Request, exc: geo.LocationServiceErro
         status_code=502,
         content={"error": {"code": "location_service_failed", "message": str(exc)}},
     )
+
+
+def _llm_error(status: int, code: str):
+    async def handle(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=status, content={"error": {"code": code, "message": str(exc)}})
+
+    return handle
+
+
+app.add_exception_handler(chat_controller.InvalidQuestionError, _llm_error(400, "invalid_question"))
+app.add_exception_handler(llm_client.LlmNotConfiguredError, _llm_error(503, "llm_not_configured"))
+app.add_exception_handler(llm_client.LlmRateLimitedError, _llm_error(429, "llm_rate_limited"))
+app.add_exception_handler(llm_client.LlmServiceError, _llm_error(502, "llm_service_failed"))
+app.add_exception_handler(llm_client.LlmBadOutputError, _llm_error(502, "llm_bad_output"))

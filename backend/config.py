@@ -28,3 +28,25 @@ def geoapify_api_key() -> str | None:
 def geoapify_key_status() -> str:
     """Wording for the health check. Never includes the key itself."""
     return "key is configured" if geoapify_api_key() else "key is not configured"
+
+
+# The chatbot's model provider. Only Gemini is wired; the key stays in the backend.
+GEMINI_KEY_SETTING = "GEMINI_API_KEY"
+GEMINI_MODEL_SETTING = "GEMINI_MODEL"
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+
+
+def gemini_api_key() -> str | None:
+    """The configured Gemini key, or None when it is absent, empty, or whitespace."""
+    value = os.getenv(GEMINI_KEY_SETTING, "").strip()
+    return value or None
+
+
+def gemini_model() -> str:
+    """The model to call. GEMINI_MODEL in .env overrides the default."""
+    return os.getenv(GEMINI_MODEL_SETTING, "").strip() or DEFAULT_GEMINI_MODEL
+
+
+def llm_key_status() -> str:
+    """Wording for the health check. Never includes the key itself."""
+    return "key is configured" if gemini_api_key() else "key is not configured"
