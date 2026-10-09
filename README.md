@@ -152,12 +152,50 @@ other categories open Expedia in a new tab.
 | GET    | `/api/saved-hotels/status?place_id=` | Which provider ids are saved, from the database |
 | POST   | `/api/saved-hotels`      | Save an API hotel for a ZIP: 201 when new, 200 when already saved |
 | DELETE | `/api/saved-hotels?place_id=` | Remove a saved hotel, its ZIP links, and its nights together |
+| POST   | `/api/chat`              | Ask a question about the saved hotels (Gemini). Read only |
 | GET    | `/api/hotels?name=`      | Search hotels by name, with their stays        |
 | GET    | `/api/users`             | The demo travelers                             |
 | GET    | `/api/bookings?user_id=` | Booking history, optionally for one traveler   |
 | POST   | `/api/bookings`          | Create a booking from `user_id` and `trip_id`  |
 | PATCH  | `/api/bookings/{id}`     | Cancel a booking; the record is kept           |
 | DELETE | `/api/bookings/{id}`     | Delete a booking                               |
+
+### Ask the chatbot (Assignment 2, Part 2)
+
+The **Ask about your saved hotels** panel answers plain questions such as "Which saved
+hotel is cheapest for two nights from October 11 to October 13, 2026?". The backend does
+the whole job, and the browser never sees the model key:
+
+1. The question, the schema of three tables (`saved_hotels`, `saved_hotel_zips`,
+   `demo_hotel_nights`), and the stay rules go to Gemini, which proposes one SQL query.
+2. `retrieval_controller.py` checks it (one `SELECT`, only those tables, a few
+   functions, no comments) and runs it on a **read-only** connection with a row cap and a
+   time limit. Gemini never touches SQLite. A disallowed query is refused and not run.
+3. The question, the query, and the retrieved rows go to Gemini again, which writes the
+   answer from those records only. The panel shows the question, the proposed query, the
+   records, and the answer, so a wrong answer can be traced.
+
+A stay from check-in D to check-out E uses the nights from D up to, but not including, E.
+A hotel is available only if every night has a record with a room free. A missing night is
+not available. Rates and rooms are simulated classroom data.
+
+Add a Gemini key to the same `.env` (get one at https://aistudio.google.com/apikey), then
+restart the backend:
+
+```
+GEMINI_API_KEY=your-key-here
+GEMINI_MODEL=gemini-3.5-flash-lite   # optional; this is the default
+```
+
+Without a key `/api/health` reports `key is not configured` and the panel says so. The
+statuses are `answered`, `no_match`, `insufficient_data`, `rejected`, and
+`query_failed`; model service problems are 502 (failed or unusable reply), 429 (rate
+limit), and 503 (no key).
+
+Checks: `backend/checks/check_chat.py` runs on fixtures with a scripted stand-in for the
+model and a throwaway database (no key, no network). `backend/checks/run_live_questions.py`
+asks the running backend a fixed set of questions through the real model and writes the
+trace as JSON. The fixed sample is `backend/checks/fixtures/chatbot_sample.json`.
 
 ### Saving hotels locally
 

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Early mockup: chatbot states</title>
+<style>
+  body { margin: 0; padding: 28px; width: 1180px; font: 15px/1.45 system-ui, sans-serif; color: #1b1f33; background: #eef0f6; }
+  h1 { margin: 0 0 4px; font: 500 26px Georgia, serif; }
+  .lede { margin: 0 0 20px; color: #5a6078; max-width: 860px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .state { background: #fff; border: 1px solid #c9cdde; border-radius: 12px; padding: 14px 16px 16px; }
+  .state > h2 { margin: 0 0 10px; font: 700 12px system-ui; letter-spacing: .12em; text-transform: uppercase; color: #5a6078; }
+  .ask { display: flex; gap: 8px; margin-bottom: 10px; }
+  .box { flex: 1; border: 1px solid #8d93ad; border-radius: 8px; padding: 8px 10px; background: #fff; }
+  .box small { display: block; color: #7b8099; font-size: 11px; }
+  .btn { border-radius: 999px; background: #1b1f33; color: #fff; padding: 0 20px; display: grid; place-items: center; font-weight: 700; }
+  .card { border: 1px solid #c9cdde; border-left: 5px solid #1d8a4c; border-radius: 8px; padding: 10px 12px; }
+  .card.amber { border-left-color: #e8a317; }
+  .card.red { border-left-color: #b3261e; }
+  .card h3 { margin: 0 0 4px; font-size: 15px; }
+  .card p { margin: 0 0 6px; }
+  .step { border: 1px dashed #aab; border-radius: 6px; padding: 6px 8px; margin-top: 6px; background: #f6f7fb; font-size: 13px; }
+  .step b { display: block; }
+  .sql { font: 12px ui-monospace, Consolas, monospace; background: #191e3b; color: #e8edff; border-radius: 5px; padding: 6px 8px; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 4px; }
+  th, td { border-bottom: 1px solid #dde; text-align: left; padding: 3px 6px; }
+  .spin { display: flex; align-items: center; gap: 10px; background: #f6f7fb; border-radius: 8px; padding: 10px 12px; color: #5a6078; }
+  .dot { width: 16px; height: 16px; border: 3px solid #d7dcea; border-top-color: #1668e3; border-radius: 50%; }
+  .note { margin: 14px 0 0; color: #5a6078; font-size: 13px; }
+  .err { background: #fbeceb; border-left: 4px solid #b3261e; color: #8a1f18; border-radius: 8px; padding: 9px 12px; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Early mockup: ask about saved hotels</h1>
+<p class="lede">Drawn on 2026-10-08, before the chat panel was coded. One question box on the page
+that already lists saved hotels. Every state shows the chain behind an answer: the question,
+the query the model proposed, the records retrieved, then the answer. All figures here are invented.</p>
+
+<div class="grid">
+  <section class="state">
+    <h2>1. Loading</h2>
+    <div class="ask"><div class="box"><small>Your question</small>Cheapest hotel for Oct 11 to 13?</div><div class="btn">Working...</div></div>
+    <div class="spin"><span class="dot"></span> Asking the model to write a query, checking it, then asking again with the records it found.</div>
+    <p class="note">The button is disabled while waiting. The message is announced to screen readers.</p>
+  </section>
+
+  <section class="state">
+    <h2>2. Answer</h2>
+    <div class="ask"><div class="box"><small>Your question</small>Cheapest hotel for Oct 11 to 13?</div><div class="btn">Ask</div></div>
+    <div class="card">
+      <h3>Answer</h3>
+      <p>Quiet Lodge is cheapest: $180.00 for 2 nights. Simulated data.</p>
+      <div class="step"><b>1. Your question</b></div>
+      <div class="step"><b>2. Query the model proposed</b><div class="sql">SELECT name, SUM(nightly_rate_cents) ...</div></div>
+      <div class="step"><b>3. Records retrieved (3 rows)</b>
+        <table><tr><th>name</th><th>nights</th><th>total</th></tr><tr><td>Quiet Lodge</td><td>2</td><td>18000</td></tr><tr><td>Harbor Inn</td><td>2</td><td>23000</td></tr></table></div>
+    </div>
+  </section>
+
+  <section class="state">
+    <h2>3. No match / not enough data</h2>
+    <div class="ask"><div class="box"><small>Your question</small>Cheapest hotel for Oct 20 to 22?</div><div class="btn">Ask</div></div>
+    <div class="card amber">
+      <h3>No match</h3>
+      <p>No saved hotel has every night of that stay. Nothing is guessed.</p>
+      <div class="step"><b>3. Records retrieved</b>Nothing was retrieved.</div>
+    </div>
+    <p class="note">If the data cannot answer the question at all (weather, say), the state is
+    "The saved data cannot answer that" and no query is shown.</p>
+  </section>
+
+  <section class="state">
+    <h2>4. Query refused, and failure</h2>
+    <div class="ask"><div class="box"><small>Your question</small>Delete all saved hotels</div><div class="btn">Ask</div></div>
+    <div class="card red">
+      <h3>The proposed query was not allowed</h3>
+      <p>It was not run and nothing was changed.</p>
+      <div class="step"><b>2. Query the model proposed</b><div class="sql">DELETE FROM saved_hotels</div></div>
+    </div>
+    <p class="note">Model service down, key missing, or rate limit reached:</p>
+    <div class="err">Model service failed. Try again in a moment.</div>
+  </section>
+</div>
+<p class="note">Interaction: type and press Enter, or press the button. Example questions are buttons
+below the box. Tab order is the box, Ask, the examples, then the open sections.</p>
+</body>
+</html>
