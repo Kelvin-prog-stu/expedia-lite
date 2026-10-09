@@ -87,7 +87,7 @@ already lists saved hotels.
 - A refused query lists the reason from the backend ("Only a SELECT query is allowed.") in
   an amber list, and the failure states each have a title (for example "Chatbot not
   configured", "Model rate limit reached").
-- Amounts in `_cents` columns are shown with dollars beside them (`20000 ($200.00)`).
+- Amounts in `_cents` columns are shown as dollars with the raw cents beside them (`$200.00`, `20000 cents`), hotel ids are shortened (the full id is in the cell's tooltip), and the query is laid out in clauses for reading. The query that is saved and run is unchanged.
 - Because conversations are saved, the panel keeps a list of earlier questions (newest first, with
   the time each was saved and the conversation id) and a "Start a new conversation" button. The
   mockup shows one question at a time.
@@ -204,7 +204,7 @@ scripted model, and pressed Enter with real key events.
 | Action | Expected | Observed |
 | --- | --- | --- |
 | Type a question, press Enter | Submits; button disabled while waiting | Submitted; button read "Working..." and was disabled; a status message was shown. [loading]({B}/docs/screenshots/part2/fixture-01-answered-loading.png?raw=true) |
-| Answered | Answer, query, records table with headers, cents with dollars | [fixture-01-answered]({B}/docs/screenshots/part2/fixture-01-answered.png?raw=true): 3 rows, headers `hotel_id name nights_found min_rooms total_cents`, `18000 ($180.00)` |
+| Answered | Answer, query, records table with headers, cents with dollars | [fixture-01-answered]({B}/docs/screenshots/part2/fixture-01-answered.png?raw=true): 3 rows, headers `hotel_id name nights_found min_rooms total_cents`, `$180.00` with `18000 cents` beside it, and the query laid out in clauses |
 | No match | Own state, no table | [fixture-02-no-match]({B}/docs/screenshots/part2/fixture-02-no-match.png?raw=true) |
 | Insufficient data | Own state, no query | [fixture-03-insufficient]({B}/docs/screenshots/part2/fixture-03-insufficient.png?raw=true) |
 | Refused query | Shows the query, says not run, nothing changed | [fixture-04-rejected]({B}/docs/screenshots/part2/fixture-04-rejected.png?raw=true) |

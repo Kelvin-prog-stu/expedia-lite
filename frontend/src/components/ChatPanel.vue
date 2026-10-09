@@ -99,6 +99,26 @@ function paragraphs(text) {
     )
 }
 
+// Lay the query out in clauses for reading. This is display only: the query that was
+// checked and run is saved and sent exactly as the model wrote it. Quoted text is left alone.
+const CLAUSE = /\s+(FROM|(?:LEFT\s+|INNER\s+)?JOIN|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT)\b/gi
+const CONDITION = /\s+(AND|OR)\s+/gi
+
+function prettySql(sql) {
+  return String(sql ?? '')
+    .split("'")
+    .map((piece, index) =>
+      index % 2 === 1 ? piece : piece.replace(CLAUSE, '\n$1').replace(CONDITION, '\n  $1 '),
+    )
+    .join("'")
+    .trim()
+}
+
+function shortId(value) {
+  const text = String(value)
+  return text.length > 14 ? text.slice(0, 6) + '\u2026' + text.slice(-4) : text
+}
+
 function kindOf(column) {
   const name = column.toLowerCase()
   if (name.endsWith('cents')) return 'money'
@@ -311,7 +331,7 @@ onMounted(restoreConversation)
               <div class="step-body">
                 <h4>The query the model proposed</h4>
                 <template v-if="turn.proposed_sql">
-                  <pre><code>{{ turn.proposed_sql }}</code></pre>
+                  <pre><code>{{ prettySql(turn.proposed_sql) }}</code></pre>
                   <p v-if="turn.reason" class="reason">{{ turn.reason }}</p>
                   <p v-if="turn.status === 'rejected'" class="verdict verdict-bad">
                     Checked by the backend and refused. It was not run, and nothing was changed.
@@ -347,7 +367,12 @@ onMounted(restoreConversation)
                           :class="`col-${kindOf(turn.columns[position])}`"
                           :title="cell(turn.columns[position], value)"
                         >
-                          {{ cell(turn.columns[position], value) }}
+                          <template v-if="kindOf(turn.columns[position]) === 'money' && typeof value === 'number'">
+                            <strong>{{ money.format(value / 100) }}</strong>
+                            <span class="raw">{{ value }} cents</span>
+                          </template>
+                          <template v-else-if="kindOf(turn.columns[position]) === 'id'">{{ shortId(value) }}</template>
+                          <template v-else>{{ cell(turn.columns[position], value) }}</template>
                         </td>
                       </tr>
                     </tbody>
@@ -849,7 +874,7 @@ pre {
   background: #191e3b;
   color: #e8edff;
   font-size: 0.82rem;
-  line-height: 1.55;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -918,6 +943,13 @@ tbody tr:nth-child(even) td {
 td.col-id {
   max-width: 9rem;
   font: 0.78rem ui-monospace, Consolas, monospace;
+  color: var(--muted);
+}
+
+.raw {
+  margin-left: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 400;
   color: var(--muted);
 }
 
